@@ -56,7 +56,7 @@ export interface CatalogStats {
   subjects: number;
 }
 
-/** Contratto del livello dati. L'unica implementazione di produzione usa Supabase (RLS lato database). */
+/** Contratto del livello dati. L'implementazione di produzione chiama le Netlify Functions (`/api/*`), che verificano la sessione Identity lato server. */
 export interface BooksApi {
   listBooks(options?: ListOptions): Promise<BookPage>;
   getBook(id: string): Promise<Book | null>;

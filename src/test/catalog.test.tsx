@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { BooksApiProvider } from "@/lib/api/BooksApiContext";
 import { routeTree } from "@/routeTree.gen";
-import { makeFakeAuthClient } from "./fakeSupabase";
+import { makeFakeIdentity } from "./fakeIdentity";
 import { makeBook, makeMemoryApi } from "./memoryApi";
 
 const seed = () => [
@@ -17,7 +17,7 @@ const seed = () => [
 function renderAt(path: string, api = makeMemoryApi(seed())) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
   render(
-    <AuthProvider client={makeFakeAuthClient({ session: true }).client}>
+    <AuthProvider identity={makeFakeIdentity({ session: true }).identity}>
       <BooksApiProvider api={api}>
         <RouterProvider router={router} />
       </BooksApiProvider>

@@ -1,0 +1,67 @@
+import { BooksApiError, mapHttpError, networkError } from "./errors";
+import type { Book, BookInput, BookPage, BooksApi, CatalogStats, ListOptions } from "./types";
+
+export interface HttpApiOptions {
+  fetch?: typeof fetch;
+  /** Chiamata una volta su 401: prova a rinnovare la sessione; true = riprova la richiesta. */
+  refreshSession?: () => Promise<boolean>;
+  /** Chiamata quando la sessione è definitivamente scaduta (dopo il rinnovo fallito). */
+  onSessionExpired?: () => void;
+}
+
+/**
+ * Client delle API di Bibliotheca (Netlify Functions). Non contiene credenziali: la sessione viaggia
+ * nei cookie di Netlify Identity e l'identità è verificata dal server a ogni richiesta.
+ */
+export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
+  const doFetch = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+
+  async function send(method: string, path: string, body?: unknown): Promise<Response> {
+    const init: RequestInit = {
+      method,
+      credentials: "same-origin",
+      headers: { accept: "application/json", "x-bibliotheca": "1", ...(body !== undefined ? { "content-type": "application/json" } : method === "DELETE" ? { "content-type": "application/json" } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    };
+    try {
+      return await doFetch(path, init);
+    } catch {
+      throw networkError();
+    }
+  }
+
+  async function call(method: string, path: string, body?: unknown, allow404 = false): Promise<unknown> {
+    let res = await send(method, path, body);
+    if (res.status === 401 && opts.refreshSession && (await opts.refreshSession().catch(() => false))) res = await send(method, path, body);
+    if (res.status === 401) opts.onSessionExpired?.();
+    let data: unknown = null;
+    try { data = await res.json(); } catch { /* corpo vuoto o non JSON */ }
+    if (res.ok) return data;
+    if (allow404 && res.status === 404) return null;
+    throw mapHttpError(res.status, data);
+  }
+
+  const qs = (o: ListOptions) => {
+    const p = new URLSearchParams();
+    if (o.query?.trim()) p.set("query", o.query);
+    if (o.status && o.status !== "tutti") p.set("status", o.status);
+    if (o.sort) p.set("sort", o.sort);
+    if (o.dir) p.set("dir", o.dir);
+    if (o.page) p.set("page", String(o.page));
+    if (o.pageSize) p.set("pageSize", String(o.pageSize));
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  };
+
+  return {
+    listBooks: async (o = {}) => (await call("GET", `/api/books${qs(o)}`)) as BookPage,
+    getBook: async (id) => (await call("GET", `/api/books/${encodeURIComponent(id)}`, undefined, true)) as Book | null,
+    createBook: async (input: BookInput) => (await call("POST", "/api/books", input)) as Book,
+    updateBook: async (id, input) => (await call("PUT", `/api/books/${encodeURIComponent(id)}`, input)) as Book,
+    deleteBook: async (id) => { await call("DELETE", `/api/books/${encodeURIComponent(id)}`); },
+    getStats: async () => (await call("GET", "/api/stats")) as CatalogStats,
+    listAllBooks: async () => ((await call("GET", "/api/export")) as { books: Book[] }).books,
+  };
+}
+
+export { BooksApiError };

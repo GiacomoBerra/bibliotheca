@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AccettaInvitoRouteImport } from './routes/accetta-invito'
 import { Route as RecuperaPasswordRouteImport } from './routes/recupera-password'
 import { Route as ReimpostaPasswordRouteImport } from './routes/reimposta-password'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
@@ -28,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccettaInvitoRoute = AccettaInvitoRouteImport.update({
+  id: '/accetta-invito',
+  path: '/accetta-invito',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecuperaPasswordRoute = RecuperaPasswordRouteImport.update({
@@ -78,6 +84,7 @@ const AppCatalogoIdModificaRoute = AppCatalogoIdModificaRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accetta-invito': typeof AccettaInvitoRoute
   '/recupera-password': typeof RecuperaPasswordRoute
   '/reimposta-password': typeof ReimpostaPasswordRoute
   '/dashboard': typeof AppDashboardRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accetta-invito': typeof AccettaInvitoRoute
   '/recupera-password': typeof RecuperaPasswordRoute
   '/reimposta-password': typeof ReimpostaPasswordRoute
   '/dashboard': typeof AppDashboardRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/accetta-invito': typeof AccettaInvitoRoute
   '/recupera-password': typeof RecuperaPasswordRoute
   '/reimposta-password': typeof ReimpostaPasswordRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accetta-invito'
     | '/recupera-password'
     | '/reimposta-password'
     | '/dashboard'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accetta-invito'
     | '/recupera-password'
     | '/reimposta-password'
     | '/dashboard'
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/accetta-invito'
     | '/recupera-password'
     | '/reimposta-password'
     | '/_app/dashboard'
@@ -157,6 +169,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  AccettaInvitoRoute: typeof AccettaInvitoRoute
   RecuperaPasswordRoute: typeof RecuperaPasswordRoute
   ReimpostaPasswordRoute: typeof ReimpostaPasswordRoute
 }
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accetta-invito': {
+      id: '/accetta-invito'
+      path: '/accetta-invito'
+      fullPath: '/accetta-invito'
+      preLoaderRoute: typeof AccettaInvitoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recupera-password': {
@@ -268,6 +288,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  AccettaInvitoRoute: AccettaInvitoRoute,
   RecuperaPasswordRoute: RecuperaPasswordRoute,
   ReimpostaPasswordRoute: ReimpostaPasswordRoute,
 }

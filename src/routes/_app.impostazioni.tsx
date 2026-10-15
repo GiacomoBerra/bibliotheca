@@ -43,7 +43,7 @@ function Impostazioni() {
 
   return (
     <>
-      <PageHeader title="Backup e impostazioni" description="Il piano gratuito di Supabase non include backup automatici: esporta il catalogo con regolarità e conserva il file altrove." />
+      <PageHeader title="Backup e impostazioni" description="Non c'è un backup automatico incluso: esporta il catalogo con regolarità e conserva il file altrove." />
       <h2 className="mb-4 text-xl font-semibold">Esportazione</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col rounded-lg border bg-card p-5">
@@ -72,7 +72,7 @@ function Impostazioni() {
       </div>
 
       <h2 className="mb-3 mt-10 text-xl font-semibold">Account</h2>
-      <p className="text-sm text-muted-foreground">Accesso come <strong className="text-foreground">{user?.email}</strong>. La registrazione è chiusa: gli account si creano dalla dashboard di Supabase.</p>
+      <p className="text-sm text-muted-foreground">Accesso come <strong className="text-foreground">{user?.email}</strong>. La registrazione è chiusa: gli account si creano per invito dalla dashboard di Netlify (Identity).</p>
     </>
   );
 }

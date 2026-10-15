@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkIsbn } from "./isbn";
 import { bookToRow, escapeLike, rowToBook, searchTerms, type BookRow } from "./mapping";
-import { mapSupabaseError } from "./errors";
+import { mapHttpError } from "./errors";
 import { validateBook, warnings } from "./validation";
 import { emptyBookInput } from "./types";
 import { booksToCsv, booksToJson, csvCell } from "../export";
@@ -64,11 +64,12 @@ describe("ricerca", () => {
 
 describe("errori", () => {
   it("messaggi italiani senza dettagli interni", () => {
-    expect(mapSupabaseError({ message: "JWT expired", code: "PGRST301" }).kind).toBe("auth");
-    expect(mapSupabaseError({ message: "new row violates row-level security policy", code: "42501" }).kind).toBe("auth");
-    expect(mapSupabaseError({ message: "TypeError: Failed to fetch" }).kind).toBe("network");
-    expect(mapSupabaseError({ message: "violates check constraint", code: "23514" }).kind).toBe("validation");
-    expect(mapSupabaseError({ message: "relation \"books\" secret detail" }).message).not.toMatch(/relation|secret/);
+    expect(mapHttpError(401, {}).kind).toBe("auth");
+    expect(mapHttpError(403, {}).kind).toBe("auth");
+    expect(mapHttpError(404, { error: { message: "Scheda non trovata." } })).toMatchObject({ kind: "notfound", message: "Scheda non trovata." });
+    expect(mapHttpError(400, { error: { code: "validation", fields: { title: "Il titolo è obbligatorio." } } })).toMatchObject({ kind: "validation", message: "Il titolo è obbligatorio." });
+    expect(mapHttpError(503, {}).kind).toBe("unavailable");
+    expect(mapHttpError(500, { error: { message: "relation \"books\" secret detail" } }).message).not.toMatch(/relation|secret/);
   });
 });
 

@@ -31,9 +31,9 @@ function Recupera() {
   return (
     <AuthLayout title="Recupero password">
       {status === "unconfigured" ? (
-        <FormMessage tone="warning">Servizio non configurato: vedi <code>docs/supabase-setup.md</code>.</FormMessage>
+        <FormMessage tone="warning">Netlify Identity non è attivo in questo ambiente: vedi <code>docs/netlify-attivazione.md</code>.</FormMessage>
       ) : done ? (
-        <FormMessage tone="info">Se l'indirizzo corrisponde a un account, riceverai un'email con il link per scegliere una nuova password. Controlla anche la cartella spam. Il piano gratuito invia poche email l'ora.</FormMessage>
+        <FormMessage tone="info">Se l'indirizzo corrisponde a un account, riceverai un'email con il link per scegliere una nuova password. Controlla anche la cartella spam. </FormMessage>
       ) : (
         <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
           <div className="space-y-1.5">

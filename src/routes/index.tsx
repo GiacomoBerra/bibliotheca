@@ -22,7 +22,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Login() {
-  const { status, signIn, sessionExpired, clearSessionExpired } = useAuth();
+  const { status, signIn, sessionExpired, clearSessionExpired, linkError } = useAuth();
   const { redirect } = Route.useSearch();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -53,9 +53,9 @@ function Login() {
   }
   if (status === "unconfigured") {
     return (
-      <AuthLayout title="Servizio non configurato">
+      <AuthLayout title="Accesso non disponibile">
         <FormMessage tone="warning">
-          Mancano le variabili <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>. Il catalogo non può essere raggiunto. Consulta <code>docs/supabase-setup.md</code> per la configurazione.
+          Netlify Identity non è attivo in questo ambiente (accade, per esempio, con <code>npm run dev</code>: l'accesso funziona solo su un deploy Netlify, anche una Deploy Preview). Vedi <code>docs/netlify-attivazione.md</code>.
         </FormMessage>
       </AuthLayout>
     );
@@ -63,7 +63,8 @@ function Login() {
 
   return (
     <AuthLayout title="Accedi al tuo catalogo">
-      <p className="mt-2 text-sm text-muted-foreground">Accesso riservato. La registrazione è chiusa: l'account viene creato dal proprietario.</p>
+      <p className="mt-2 text-sm text-muted-foreground">Accesso riservato. La registrazione è chiusa: si entra solo su invito del proprietario.</p>
+      {linkError && <FormMessage tone="error">{linkError}</FormMessage>}
       {sessionExpired && <FormMessage tone="warning">La sessione è scaduta o è stata chiusa. Accedi di nuovo per continuare.</FormMessage>}
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
         <div className="space-y-1.5">

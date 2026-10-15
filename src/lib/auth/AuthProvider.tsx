@@ -1,21 +1,43 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
-import { supabase as defaultClient } from "@/lib/supabase";
+import * as netlifyIdentity from "@netlify/identity";
 import { authErrorMessage } from "./messages";
 
+/** Parte di @netlify/identity usata dall'app: permette di sostituirla nei test. */
+export interface IdentityApi {
+  getUser(): Promise<{ id: string; email?: string | undefined } | null>;
+  login(email: string, password: string): Promise<unknown>;
+  logout(): Promise<void>;
+  requestPasswordRecovery(email: string): Promise<void>;
+  updateUser(updates: { password?: string }): Promise<unknown>;
+  handleAuthCallback(): Promise<{ type: string; token?: string | undefined } | null>;
+  acceptInvite(token: string, password: string): Promise<unknown>;
+  onAuthChange(cb: (event: string, user: { id: string; email?: string | undefined } | null) => void): () => void;
+  refreshSession(): Promise<string | null>;
+}
+
 export type AuthStatus = "loading" | "unconfigured" | "anonymous" | "authenticated";
+export interface AuthUser { id: string; email?: string | undefined }
 
 export interface AuthContextValue {
   status: AuthStatus;
-  user: User | null;
+  user: AuthUser | null;
   /** true se la sessione è terminata senza che l'utente abbia premuto "Esci" */
   sessionExpired: boolean;
-  /** true dopo l'apertura del link di recupero password */
+  /** true dopo l'apertura del link di recupero password (l'utente è collegato per scegliere la nuova password) */
   recoveryMode: boolean;
+  /** token di invito da usare per scegliere la password del primo accesso */
+  inviteToken: string | null;
+  /** errore nell'elaborazione di un link ricevuto per email */
+  linkError: string | null;
   signIn(email: string, password: string): Promise<{ error: string | null }>;
   signOut(): Promise<void>;
   requestPasswordReset(email: string): Promise<{ error: string | null }>;
   updatePassword(password: string): Promise<{ error: string | null }>;
+  acceptInvite(password: string): Promise<{ error: string | null }>;
+  /** Tenta il rinnovo della sessione (usato dalle API su 401). */
+  refresh(): Promise<boolean>;
+  /** Segna la sessione come scaduta (usato dalle API quando il rinnovo fallisce). */
+  expireSession(): void;
   clearSessionExpired(): void;
 }
 
@@ -27,91 +49,128 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-export function AuthProvider({ children, client = defaultClient }: { children: ReactNode; client?: SupabaseClient | null }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [status, setStatus] = useState<AuthStatus>(client ? "loading" : "unconfigured");
+const realIdentity = netlifyIdentity as unknown as IdentityApi;
+
+export function AuthProvider({ children, identity = realIdentity }: { children: ReactNode; identity?: IdentityApi }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [status, setStatus] = useState<AuthStatus>("loading");
   const [sessionExpired, setSessionExpired] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const manualSignOut = useRef(false);
   const hadSession = useRef(false);
 
+  const apply = useCallback((u: AuthUser | null) => {
+    setUser(u);
+    setStatus(u ? "authenticated" : "anonymous");
+    if (u) hadSession.current = true;
+  }, []);
+
   useEffect(() => {
-    if (!client) return;
     let active = true;
-    client.auth.getSession().then(({ data }) => {
+    (async () => {
+      try {
+        try {
+          const cb = await identity.handleAuthCallback();
+          if (active && cb?.type === "recovery") setRecoveryMode(true);
+          if (active && cb?.type === "invite" && cb.token) setInviteToken(cb.token);
+        } catch (e) {
+          if ((e as Error).name === "MissingIdentityError") throw e;
+          if (active) setLinkError("Il link ricevuto per email non è valido o è scaduto. Richiedine uno nuovo.");
+        }
+        const u = await identity.getUser();
+        if (active) apply(u);
+      } catch (e) {
+        if (!active) return;
+        if ((e as Error).name === "MissingIdentityError") setStatus("unconfigured");
+        else setStatus("anonymous");
+      }
+    })();
+    const off = identity.onAuthChange((event, u) => {
       if (!active) return;
-      hadSession.current = Boolean(data.session);
-      setSession(data.session);
-      setStatus(data.session ? "authenticated" : "anonymous");
-    }).catch(() => {
-      if (active) setStatus("anonymous");
-    });
-    const { data } = client.auth.onAuthStateChange((event, next) => {
-      if (!active) return;
-      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
-      if (event === "SIGNED_OUT") {
+      if (event === "recovery") setRecoveryMode(true);
+      if (event === "token_refresh" || event === "user_updated") { if (u) apply(u); return; }
+      if (event === "logout" || !u) {
         if (!manualSignOut.current && hadSession.current) setSessionExpired(true);
         manualSignOut.current = false;
         hadSession.current = false;
         setRecoveryMode(false);
+        apply(null);
+        return;
       }
-      if (next) hadSession.current = true;
-      setSession(next);
-      setStatus(next ? "authenticated" : "anonymous");
+      apply(u);
     });
-    return () => {
-      active = false;
-      data.subscription.unsubscribe();
-    };
-  }, [client]);
+    return () => { active = false; off(); };
+  }, [identity, apply]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!client) return { error: "Il servizio di accesso non è configurato." };
     try {
-      const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) return { error: authErrorMessage(error) };
+      await identity.login(email.trim(), password);
+      const u = await identity.getUser();
       setSessionExpired(false);
+      apply(u);
       return { error: null };
     } catch (e) {
       return { error: authErrorMessage(e as Error) };
     }
-  }, [client]);
+  }, [identity, apply]);
 
   const signOut = useCallback(async () => {
-    if (!client) return;
     manualSignOut.current = true;
-    await client.auth.signOut();
-  }, [client]);
+    try { await identity.logout(); } finally { setRecoveryMode(false); hadSession.current = false; apply(null); manualSignOut.current = false; }
+  }, [identity, apply]);
 
   const requestPasswordReset = useCallback(async (email: string) => {
-    if (!client) return { error: "Il servizio di accesso non è configurato." };
     try {
-      const { error } = await client.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reimposta-password` });
-      // Il messaggio mostrato all'utente è neutro: non rivela se l'email esiste (vedi la pagina).
-      if (error && (error.status === 429 || /rate|too many/i.test(error.message))) return { error: authErrorMessage(error) };
-      return { error: null };
+      await identity.requestPasswordRecovery(email.trim());
+      return { error: null }; // risposta neutra: non rivela se l'email esiste
     } catch (e) {
-      return { error: authErrorMessage(e as Error) };
+      const err = e as { status?: number; message?: string; name?: string };
+      // Un indirizzo sconosciuto non deve essere distinguibile: si segnalano solo limiti e problemi di rete/servizio.
+      if (err.status === 429 || err.name === "MissingIdentityError" || /fetch|network|rate/i.test(err.message ?? "")) return { error: authErrorMessage(err) };
+      return { error: null };
     }
-  }, [client]);
+  }, [identity]);
 
   const updatePassword = useCallback(async (password: string) => {
-    if (!client) return { error: "Il servizio di accesso non è configurato." };
     try {
-      const { error } = await client.auth.updateUser({ password });
-      if (error) return { error: authErrorMessage(error) };
+      await identity.updateUser({ password });
       setRecoveryMode(false);
       return { error: null };
     } catch (e) {
       return { error: authErrorMessage(e as Error) };
     }
-  }, [client]);
+  }, [identity]);
+
+  const acceptInvite = useCallback(async (password: string) => {
+    if (!inviteToken) return { error: "Il link di invito non è più valido. Chiedi un nuovo invito al proprietario." };
+    try {
+      await identity.acceptInvite(inviteToken, password);
+      const u = await identity.getUser();
+      setInviteToken(null);
+      apply(u);
+      return { error: null };
+    } catch (e) {
+      return { error: authErrorMessage(e as Error) };
+    }
+  }, [identity, inviteToken, apply]);
+
+  const refresh = useCallback(async () => {
+    try { return (await identity.refreshSession()) !== null; } catch { return false; }
+  }, [identity]);
+
+  const expireSession = useCallback(() => {
+    if (hadSession.current) setSessionExpired(true);
+    hadSession.current = false;
+    apply(null);
+  }, [apply]);
 
   const value = useMemo<AuthContextValue>(() => ({
-    status, user: session?.user ?? null, sessionExpired, recoveryMode,
-    signIn, signOut, requestPasswordReset, updatePassword,
+    status, user, sessionExpired, recoveryMode, inviteToken, linkError,
+    signIn, signOut, requestPasswordReset, updatePassword, acceptInvite, refresh, expireSession,
     clearSessionExpired: () => setSessionExpired(false),
-  }), [status, session, sessionExpired, recoveryMode, signIn, signOut, requestPasswordReset, updatePassword]);
+  }), [status, user, sessionExpired, recoveryMode, inviteToken, linkError, signIn, signOut, requestPasswordReset, updatePassword, acceptInvite, refresh, expireSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
