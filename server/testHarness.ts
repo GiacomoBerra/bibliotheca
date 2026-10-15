@@ -17,17 +17,23 @@ export async function makeTestDb(): Promise<{ db: Db; raw: PGlite }> {
 }
 
 /**
- * Finta sessione verificata: l'identità si legge SOLO dall'intestazione `x-test-session`, che nel test
- * rappresenta il cookie di sessione già verificato da Netlify Identity. Valori: id utente, oppure assente.
+ * Finta sessione verificata: identità e ruoli si leggono SOLO dalle intestazioni `x-test-session` (id) e
+ * `x-test-roles` (ruoli separati da virgola), che nei test rappresentano il JWT già verificato da Netlify Identity.
+ * Le intestazioni della richiesta reale (x-user-id, authorization, cookie...) non contano.
  */
 export function makeDeps(db: Db | null, extra: Partial<Deps> = {}): Deps {
-  return { getDb: () => db, getUserId: async (req) => req.headers.get("x-test-session"), ...extra };
+  return { getDb: () => db, getPrincipal: async (req) => {
+      const id = req.headers.get("x-test-session");
+      return id ? { id, roles: (req.headers.get("x-test-roles") ?? "").split(",").filter(Boolean) } : null;
+    },
+    ...extra,
+  };
 }
 
 export function api(deps: Deps) {
-  return async (method: string, path: string, opts: { user?: string; body?: unknown; headers?: Record<string, string>; raw?: string } = {}) => {
+  return async (method: string, path: string, opts: { user?: string; roles?: string[]; body?: unknown; headers?: Record<string, string>; raw?: string } = {}) => {
     const headers: Record<string, string> = { ...(opts.headers ?? {}) };
-    if (opts.user) headers["x-test-session"] = opts.user;
+    if (opts.user) { headers["x-test-session"] = opts.user; headers["x-test-roles"] = (opts.roles ?? ["admin"]).join(","); }
     if (method !== "GET") { headers["x-bibliotheca"] ??= "1"; headers["content-type"] ??= "application/json"; headers["origin"] ??= "https://bibliotheca.test"; }
     const body = method === "GET" ? undefined : opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined);
     const res = await handle(new Request(`https://bibliotheca.test${path}`, { method, headers, ...(body !== undefined ? { body } : {}) }), deps);

@@ -33,21 +33,24 @@ describe("Driver pg di produzione su Postgres locale Netlify", () => {
     expect((await call("GET", "/api/stats", { user: "u1" })).json.total).toBe(1);
     expect((await call("DELETE", `/api/books/${c.json.id}`, { user: "u1" })).status).toBe(200);
   });
-  it("isolamento tra utenti anche col driver reale", async () => {
-    const c = await call("POST", "/api/books", { user: "u1", body: { title: "Privato" } });
-    expect((await call("GET", `/api/books/${c.json.id}`, { user: "u2" })).status).toBe(404);
-    expect((await call("DELETE", `/api/books/${c.json.id}`, { user: "u2" })).status).toBe(404);
-    expect((await call("GET", "/api/books", { user: "u2" })).json.total).toBe(0);
+  it("ruoli e catalogo condiviso anche col driver reale", async () => {
+    const c = await call("POST", "/api/books", { user: "u1", body: { title: "Condiviso" } });
+    expect((await call("GET", `/api/books/${c.json.id}`, { user: "u2", roles: ["admin"] })).status).toBe(200);
+    expect((await call("GET", `/api/books/${c.json.id}`, { user: "v1", roles: ["viewer"] })).status).toBe(200);
+    expect((await call("DELETE", `/api/books/${c.json.id}`, { user: "v1", roles: ["viewer"] })).status).toBe(403);
+    expect((await call("GET", "/api/export", { user: "v1", roles: ["viewer"] })).status).toBe(403);
+    expect((await call("GET", "/api/books", { user: "n1", roles: [] })).status).toBe(403);
     expect((await call("GET", "/api/books")).status).toBe(401);
+    expect((await call("GET", `/api/books/${c.json.id}`, { user: "u1" })).status).toBe(200);
   });
   it("la persistenza sopravvive a una nuova connessione (nuovo pool = nuova istanza della Function)", async () => {
     const fresh = api(makeDeps(mk()));
-    expect((await fresh("GET", "/api/books?query=privato", { user: "u1" })).json.total).toBe(1);
+    expect((await fresh("GET", "/api/books?query=condiviso", { user: "u1" })).json.total).toBe(1);
   });
   it("le migrazioni sono state applicate dal motore di Netlify (schema atteso)", async () => {
     const client = new pg.Client({ connectionString });
     await client.connect();
-    const cols = await client.query("select column_name from information_schema.columns where table_name = 'books' and column_name in ('owner_id','marc_fields','search_text')");
+    const cols = await client.query("select column_name from information_schema.columns where table_name = 'books' and column_name in ('created_by','marc_fields','search_text')");
     await client.end();
     expect(cols.rowCount).toBe(3);
   });

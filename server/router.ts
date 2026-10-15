@@ -3,11 +3,21 @@ import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
 
+export interface Principal { id: string; roles: readonly string[] }
+export type Role = "admin" | "viewer";
+
+/** Ruolo effettivo: `admin` prevale su `viewer`; qualsiasi altro valore (o nessun ruolo) non dà alcun accesso. */
+export function roleOf(p: Principal): Role | null {
+  if (p.roles.includes("admin")) return "admin";
+  if (p.roles.includes("viewer")) return "viewer";
+  return null;
+}
+
 export interface Deps {
   /** Restituisce il database, o null se non è configurato (variabile d'ambiente assente). */
   getDb(): Db | null;
-  /** Identità VERIFICATA lato server (sessione Netlify Identity). Mai letta dal corpo o dai parametri della richiesta. */
-  getUserId(req: Request): Promise<string | null>;
+  /** Identità e ruoli VERIFICATI lato server (sessione Netlify Identity). Mai letti dal corpo o dai parametri della richiesta. */
+  getPrincipal(req: Request): Promise<Principal | null>;
   log?(message: string): void;
 }
 
@@ -65,21 +75,27 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (!m) return fail(404, "not_found", "Risorsa inesistente.");
     const [, resource, id] = m as unknown as [string, string, string | undefined];
 
-    // 1. CSRF  2. Autenticazione  3. Database  4. Autorizzazione applicata dalle query (owner_id)
+    // 1. CSRF  2. Autenticazione  3. Ruolo (autorizzazione, PRIMA di qualsiasi accesso ai dati)  4. Database
     if (!csrfOk(req)) return fail(403, "csrf", "Richiesta non consentita da questo indirizzo.");
-    const userId = await deps.getUserId(req);
-    if (!userId) return fail(401, "unauthenticated", "La sessione è scaduta o non hai effettuato l'accesso. Accedi di nuovo.");
+    const principal = await deps.getPrincipal(req);
+    if (!principal?.id) return fail(401, "unauthenticated", "La sessione è scaduta o non hai effettuato l'accesso. Accedi di nuovo.");
+    const role = roleOf(principal);
+    if (!role) return fail(403, "no_role", "Il tuo account non ha un ruolo assegnato (admin o viewer). Chiedi all'amministratore di assegnartelo.");
+    const userId = principal.id;
+    // Il visualizzatore può solo consultare (lettura di schede, elenco, statistiche): mai scrivere o esportare.
+    const readOnlyAllowed = req.method === "GET" && (resource === "books" || resource === "stats");
+    if (role === "viewer" && !readOnlyAllowed) return fail(403, "forbidden", "Il tuo ruolo (visualizzatore) consente solo di consultare il catalogo.");
     const db = deps.getDb();
     if (!db) return fail(503, "db_unavailable", "Il database non è ancora configurato per questo ambiente.");
 
     if (resource === "stats" && !id) {
-      return req.method === "GET" ? json(200, await repo.getStats(db, userId)) : fail(405, "method", "Metodo non consentito.");
+      return req.method === "GET" ? json(200, await repo.getStats(db)) : fail(405, "method", "Metodo non consentito.");
     }
     if (resource === "export" && !id) {
-      return req.method === "GET" ? json(200, { books: await repo.listAllBooks(db, userId) }) : fail(405, "method", "Metodo non consentito.");
+      return req.method === "GET" ? json(200, { books: await repo.listAllBooks(db) }) : fail(405, "method", "Metodo non consentito.");
     }
     if (resource === "books" && !id) {
-      if (req.method === "GET") return json(200, await repo.listBooks(db, userId, listOptions(url)));
+      if (req.method === "GET") return json(200, await repo.listBooks(db, listOptions(url)));
       if (req.method === "POST") {
         const body = await readJson(req);
         if (!body.ok) return body.res;
@@ -91,7 +107,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     }
     if (resource === "books" && id) {
       if (req.method === "GET") {
-        const b = await repo.getBook(db, userId, id);
+        const b = await repo.getBook(db, id);
         return b ? json(200, b) : fail(404, "not_found", "Scheda non trovata.");
       }
       if (req.method === "PUT") {
@@ -100,10 +116,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         const parsed = parseBookInput(body.value);
         if (!parsed.ok) return fail(400, "validation", "Alcuni campi non sono validi.", parsed.errors);
         const b = await repo.updateBook(db, userId, id, parsed.input);
-        return b ? json(200, b) : fail(404, "not_found", "La scheda non esiste più o non è tua: nessuna modifica è stata salvata.");
+        return b ? json(200, b) : fail(404, "not_found", "La scheda non esiste più: nessuna modifica è stata salvata.");
       }
       if (req.method === "DELETE") {
-        return (await repo.deleteBook(db, userId, id)) ? json(200, { deleted: true }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
+        return (await repo.deleteBook(db, id)) ? json(200, { deleted: true }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
       }
       return fail(405, "method", "Metodo non consentito.");
     }

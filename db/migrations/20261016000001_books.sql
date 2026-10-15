@@ -4,12 +4,14 @@
 -- e PROVVEDE il database da solo se trova quella cartella. Si sposta lì solo dopo approvazione dei costi
 -- (vedi docs/netlify-attivazione.md).
 --
--- Sicurezza: il browser non si collega mai al database. Solo le Netlify Functions lo interrogano e
--- ogni query è filtrata con `owner_id` = id utente verificato lato server (mai fornito dal browser).
+-- Sicurezza: il browser non si collega mai al database. Solo le Netlify Functions lo interrogano.
+-- Il catalogo è UNICO e condiviso: l'accesso dipende dal ruolo (admin / viewer) verificato lato server.
+-- `created_by` / `updated_by` registrano chi ha scritto (id Netlify Identity impostato dal server); non limitano la lettura.
 
 create table books (
   id                   uuid primary key default gen_random_uuid(),
-  owner_id             text not null check (char_length(owner_id) between 1 and 200),
+  created_by           text not null check (char_length(created_by) between 1 and 200),
+  updated_by           text check (char_length(updated_by) <= 200),
 
   -- Solo `title` è obbligatorio: i record incompleti sono ammessi.
   title                text not null check (char_length(btrim(title)) between 1 and 500),
@@ -35,8 +37,8 @@ create table books (
   updated_at           timestamptz not null default now()
 );
 
-create index books_owner_updated_idx on books (owner_id, updated_at desc);
-create index books_owner_title_idx   on books (owner_id, lower(title));
+create index books_updated_idx on books (updated_at desc);
+create index books_title_idx   on books (lower(title));
 
 create function books_before_write()
 returns trigger
