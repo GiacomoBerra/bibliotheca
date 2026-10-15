@@ -1,39 +1,32 @@
 # CLAUDE.md — regole di sviluppo per Bibliotheca
 
 ## Contesto
-Bibliotheca viene costruita da zero. Non esiste codice sorgente iniziale da preservare o migrare. Il brief definisce requisiti desiderati, non funzionalità già implementate.
+Biblioteca personale privata per catalogare libri e imparare MARC21, soggettazione e Dewey. Costruita da zero. Il brief definisce requisiti desiderati, non funzionalità già implementate.
 
-## Prima di intervenire
-- Leggi questo file e il README, poi verifica la struttura e la configurazione reali del repository.
-- Se il repository è vuoto, proponi una struttura minima coerente con lo stack scelto e documenta la decisione.
-- Persistenza e autenticazione: **Supabase Free** (PostgreSQL + Supabase Auth), scelta confermata dal proprietario; il sito resta su Netlify. L'autorizzazione è nelle policy RLS del database (`supabase/migrations`), non nell'interfaccia.
-- Non attivare piani a pagamento, auto-recharge o servizi con costi senza approvazione esplicita. Il piano Free Netlify ha un limite rigido di crediti e un'app può essere sospesa se la quota si esaurisce.
-- Non modificare o cancellare file fuori dall'ambito concordato.
+## Architettura decisa (solo Netlify, budget CHF/EUR 0)
+- Hosting: Netlify (SPA statica Vite + React 19 + TanStack Router + Tailwind v4, nessun SSR).
+- Login e sessioni: **Netlify Identity** (`@netlify/identity`), registrazione pubblica disabilitata (solo invito), account proprietario creato dalla dashboard.
+- API: **Netlify Functions** (`netlify/functions/api.mts` → `server/`). Tutte le operazioni sui dati (lettura, scrittura, cancellazione, esportazione) passano da qui.
+- Database: **Netlify Database** (PostgreSQL). Il browser non vi si collega mai e non contiene credenziali.
+- GitHub: solo repository e versionamento.
+- Supabase NON si usa più (decisione definitiva del proprietario).
 
-## Regole di implementazione
-- Procedi per incrementi piccoli e funzionanti; evita riscritture massive generate in un solo passaggio.
-- Mantieni codice leggibile, componenti riutilizzabili, accessibilità e layout responsive.
-- Non aggiungere segreti, chiavi API o credenziali nel codice o nei log.
-- Non trasferire dati bibliografici a servizi esterni senza scelta esplicita.
-- Non dichiarare regole MARC21, Dewey o soggettazione come validate senza fonti e controlli pertinenti.
-- Distingui una vista testuale MARC da un formato standardizzato d'interscambio.
+## Regole non negoziabili
+- Ogni Function che tocca i dati: 1) controllo CSRF, 2) identità da `getUser()` (sessione verificata lato server), 3) query SEMPRE filtrate con `owner_id = <id verificato>`. Mai accettare dal browser un id utente (parametri, corpo, intestazioni).
+- Non attivare piani a pagamento, crediti extra o ricariche automatiche. Il database Netlify NON va provisionato finché il proprietario non approva i costi (vedi `docs/netlify-attivazione.md`): per questo le migrazioni stanno in `db/migrations` e NON in `netlify/database/migrations`, e `@netlify/database` non è installato. Non spostare né installare senza approvazione: un deploy farebbe creare il database.
+- Mai `drizzle-kit push/migrate` né DDL manuale su un database Netlify: lo schema arriva solo da file di migrazione applicati dal deploy. Non modificare migrazioni già applicate: scrivine una nuova.
+- Segreti: mai nel codice, nei log o nei file pubblici. `.env*` ignorato da git.
+- Non dichiarare regole MARC21, Dewey o soggetti come validati senza fonti. Una vista testuale MARC non è un file interoperabile.
+- Stati: proposta / implementata / testata / pubblicata. Non dichiarare testato ciò che non è stato eseguito. Netlify Identity non funziona con `netlify dev`: si prova solo su un deploy (anche Deploy Preview).
+- Nessuna pubblicazione in produzione senza conferma esplicita.
 
-## Prima di concludere
-- Riassumi file e funzioni create o modificate.
-- Esegui test e build pertinenti e riporta i risultati reali.
-- Controlla diff, file rimossi e possibili segreti accidentali.
-- Per persistenza e import/export, prova salvataggio, backup, ripristino e gestione degli errori.
-- Non eseguire deployment in produzione senza esplicita approvazione.
-
-## Stile
-Rispondi in italiano, con istruzioni pratiche. Distingui sempre proposto, implementato, testato e pubblicato. Se non puoi eseguire un controllo, dichiaralo.
-
-## Note tecniche del repository
-- Stack: Vite + React 19 + TanStack Router (SPA), Tailwind v4, `@supabase/supabase-js`. Nessun SSR.
-- Tutti i dati passano dall'interfaccia `BooksApi` (`src/lib/api`); l'unica implementazione è `supabaseBooksApi.ts`. Nei test si usa `src/test/memoryApi.ts`.
-- Nel browser solo `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`. Mai chiave secret/service_role. `.env*` è ignorato da git (vedi `.env.example`).
-- Il client non invia mai `user_id`: lo imposta il database (`default auth.uid()`); la RLS lo verifica.
-- Ogni modifica allo schema = nuova migrazione in `supabase/migrations` + aggiornamento di `docs/database.md` + test in `src/test/rls.test.ts`.
+## Note tecniche
+- Dati: interfaccia `BooksApi` (`src/lib/api`); implementazione `httpBooksApi.ts` (chiama `/api/*`). Nei test i componenti usano `src/test/memoryApi.ts`.
+- Server: `server/router.ts` (instradamento, CSRF, auth, validazione), `server/booksRepo.ts` (SQL parametrizzato, ORDER BY in whitelist), `server/db.ts` (driver `pg`, `NETLIFY_DB_URL`). Validazione condivisa con il client in `src/lib/api/parse.ts` e `validation.ts`.
+- Test del server: `server/*.test.ts` su Postgres reale (PGlite e `@netlify/database-dev` con il driver `pg`).
 - `src/routeTree.gen.ts` è generato da `vite build`/`vite dev`: non modificarlo a mano.
 - Prima di ogni commit: `npm run build` e `npm test`.
-- Documentazione: `docs/` (setup Supabase, schema, decisioni e test).
+- Documentazione: `docs/`.
+
+## Stile
+Rispondi in italiano, con istruzioni pratiche. Se non puoi eseguire un controllo, dichiaralo.

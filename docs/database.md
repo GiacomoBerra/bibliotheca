@@ -1,13 +1,13 @@
 # Schema del database
 
-Stato: **implementata** e **testata** (PGlite, ruoli simulati). Non ancora eseguita su Supabase reale.
-Fonte: `supabase/migrations/20261015000001_books.sql`.
+Stato: **implementata** e **testata** su Postgres locale (PGlite e motore locale di Netlify via driver `pg`). **Non applicata a nessun database Netlify.**
+Fonte: `db/migrations/20261016000001_books.sql` (fuori da `netlify/database/migrations` finché i costi non sono approvati).
 
-## Tabella `public.books`
+## Tabella `books`
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | uuid PK | generato |
-| user_id | uuid FK auth.users | default `auth.uid()`; la RLS impedisce di impostarne un altro |
+| owner_id | text | id utente di Netlify Identity, **impostato dal server** dalla sessione verificata; mai dal browser |
 | title | text, obbligatorio | unico campo obbligatorio (1–500 caratteri non vuoti) |
 | authors | text[] | uno per elemento, ordine conservato |
 | isbn, publisher, publication_place, language, physical_description, notes, dewey, shelf_mark | text | tutti facoltativi |
@@ -37,5 +37,9 @@ Il database garantisce solo che sia un array. La **validità MARC21** (tag ammes
 - Mappature automatiche (es. 245$a ↔ titolo) saranno aggiunte solo dopo verifica sulla documentazione ufficiale, con anteprima e conferma prima di modificare qualsiasi dato.
 - La vista MARC della scheda resta **illustrativa e non validata**.
 
-## Sicurezza (RLS)
-RLS attiva **e forzata** su `books`; `anon` senza alcun privilegio; `authenticated` può SELECT/INSERT/UPDATE/DELETE solo righe con `user_id = auth.uid()` (4 policy). L'app usa solo la chiave pubblicabile: l'autorizzazione è nel database, non nell'interfaccia.
+## Sicurezza
+Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa di connessione di Netlify (`NETLIFY_DB_URL`), che non lascia mai il server. L'autorizzazione è nel codice del server, verificata dai test:
+- ogni query include `owner_id = <id utente verificato>` (`server/booksRepo.ts`);
+- il corpo della richiesta non può impostare né cambiare `owner_id` (campi sconosciuti ignorati);
+- SQL sempre parametrizzato; ORDER BY da whitelist; `%` e `_` della ricerca sono letterali;
+- limiti di lunghezza anche nel database (CHECK).
