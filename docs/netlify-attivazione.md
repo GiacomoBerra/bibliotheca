@@ -47,3 +47,12 @@ Esporta il catalogo (Impostazioni) con regolarità. Snapshot Netlify Database: v
 **Costi (da docs.netlify.com, Billing and usage, letto il 15 ott 2026):** solo piani a crediti; 10 crediti per unità di compute-ora, 20 crediti/GB in uscita; storage gratuito "fino al 1 luglio 2026", prezzo successivo non pubblicato; piano Free: 1 compute unit, 48 unit-ore, 5 GB storage/scritture/banda per periodo, 3 database, sleep dopo 5 min. Con il tetto di 300 crediti/mese i 48 unit-ore (=480 crediti) non sono raggiungibili: il limite reale è il tetto crediti. Il dashboard (Team > Billing) va controllato dal proprietario prima dell'attivazione.
 
 **Attivazione (solo dopo approvazione costi, prima su Deploy Preview):** `npm i @netlify/database`, `git mv db/migrations netlify/database/migrations`, push del branch, verifica del preview, poi merge.
+
+## Checklist di verifica su Deploy Preview (da eseguire con un utente reale)
+1. Preview PR #3: https://deploy-preview-3--bibliotheca-sbt.netlify.app (richiede login SSO Netlify per i non-production).
+2. Accedi come `admin` → Aggiungi libro → Salva: nessun errore.
+3. Ricarica la pagina, esci, rientra: il libro è nell'elenco.
+4. Accedi come `viewer`: vede il libro, nessun pulsante di modifica/eliminazione.
+5. Da console del browser (loggato come viewer):
+   `fetch('/api/books',{method:'POST',headers:{'content-type':'application/json','x-bibliotheca':'1'},body:'{"title":"x"}'}).then(r=>r.status)` → atteso 403; stesso test con PUT/DELETE su `/api/books/<id>` → 403.
+Il preview usa un branch del database copiato dalla produzione: i dati inseriti lì non toccano la produzione.
