@@ -32,7 +32,7 @@ describe("validazione", () => {
 });
 
 describe("mapping righe ↔ schede", () => {
-  const row: BookRow = { id: "1", title: "T", authors: null, isbn: null, publisher: null, publication_place: null, publication_year: null, language: null, physical_description: null, notes: null, subjects: null, dewey: null, shelf_mark: null, status: "strano", marc_leader: null, marc_fields: null, created_at: "c", updated_at: "u" };
+  const row: BookRow = { id: "1", title: "T", authors: null, isbn: null, publisher: null, publication_place: null, publication_year: null, language: null, physical_description: null, notes: null, subjects: null, dewey: null, dewey_notes: null, dewey_source: null, shelf_mark: null, status: "strano", marc_leader: null, marc_fields: null, created_at: "c", updated_at: "u" };
   it("record incompleto: NULL → stringhe vuote e liste vuote; stato sconosciuto → bozza", () => {
     const b = rowToBook(row);
     expect(b).toMatchObject({ authors: [], isbn: "", subjects: [], status: "bozza", marcFields: null });

@@ -25,6 +25,8 @@ const CSV_COLUMNS: [string, (b: Book) => string][] = [
   ["descrizione_fisica", (b) => b.physicalDescription],
   ["soggetti", (b) => b.subjects.join(" | ")],
   ["dewey", (b) => b.dewey],
+  ["dewey_fonte", (b) => b.deweySource],
+  ["dewey_note", (b) => b.deweyNotes],
   ["collocazione", (b) => b.shelfMark],
   ["note", (b) => b.notes],
   ["stato", (b) => b.status],

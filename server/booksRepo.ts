@@ -52,7 +52,7 @@ export async function getBook(db: Db, id: string): Promise<Book | null> {
   return r.rows[0] ? rowToBook(r.rows[0]) : null;
 }
 
-const WRITE_COLS = ["title", "authors", "isbn", "publisher", "publication_place", "publication_year", "language", "physical_description", "notes", "subjects", "dewey", "shelf_mark", "status", "marc_leader", "marc_fields"] as const;
+const WRITE_COLS = ["title", "authors", "isbn", "publisher", "publication_place", "publication_year", "language", "physical_description", "notes", "subjects", "dewey", "dewey_notes", "dewey_source", "shelf_mark", "status", "marc_leader", "marc_fields"] as const;
 
 function writeParams(input: BookInput): unknown[] {
   const row = bookToRow(input) as Record<string, unknown>;

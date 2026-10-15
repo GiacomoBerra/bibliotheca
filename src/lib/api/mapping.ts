@@ -1,5 +1,5 @@
-import type { Book, BookInput, BookStatus, MarcField } from "./types";
-import { BOOK_STATUSES } from "./types";
+import type { Book, BookInput, BookStatus, MarcField, DeweySource } from "./types";
+import { BOOK_STATUSES, DEWEY_SOURCES } from "./types";
 
 /** Riga della tabella public.books come restituita da PostgREST. */
 export interface BookRow {
@@ -15,6 +15,8 @@ export interface BookRow {
   notes: string | null;
   subjects: string[] | null;
   dewey: string | null;
+  dewey_notes: string | null;
+  dewey_source: string | null;
   shelf_mark: string | null;
   status: string;
   marc_leader: string | null;
@@ -24,7 +26,7 @@ export interface BookRow {
 }
 
 export const BOOK_COLUMNS =
-  "id,title,authors,isbn,publisher,publication_place,publication_year,language,physical_description,notes,subjects,dewey,shelf_mark,status,marc_leader,marc_fields,created_at,updated_at";
+  "id,title,authors,isbn,publisher,publication_place,publication_year,language,physical_description,notes,subjects,dewey,dewey_notes,dewey_source,shelf_mark,status,marc_leader,marc_fields,created_at,updated_at";
 
 function isMarcField(f: unknown): f is MarcField {
   if (!f || typeof f !== "object") return false;
@@ -50,6 +52,8 @@ export function rowToBook(r: BookRow): Book {
     notes: r.notes ?? "",
     subjects: r.subjects ?? [],
     dewey: r.dewey ?? "",
+    deweyNotes: r.dewey_notes ?? "",
+    deweySource: (DEWEY_SOURCES as readonly string[]).includes(r.dewey_source ?? "") ? (r.dewey_source as DeweySource) : "",
     shelfMark: r.shelf_mark ?? "",
     status,
     marcLeader: r.marc_leader,
@@ -76,6 +80,8 @@ export function bookToRow(b: BookInput) {
     notes: nullIfEmpty(b.notes),
     subjects: cleanList(b.subjects),
     dewey: nullIfEmpty(b.dewey),
+    dewey_notes: nullIfEmpty(b.deweyNotes),
+    dewey_source: b.deweySource === "" ? null : b.deweySource,
     shelf_mark: nullIfEmpty(b.shelfMark),
     status: b.status,
     marc_leader: b.marcLeader,

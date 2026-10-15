@@ -212,7 +212,7 @@ describe("Risultati, anteprima e importazione", () => {
     expect(screen.getByLabelText("ISBN")).toHaveValue("9780306406157");
     expect((screen.getByLabelText(/^Autori/) as HTMLTextAreaElement).value).toBe("Anna Rossi");
     expect(screen.getByLabelText("Descrizione fisica")).toHaveValue("320 pagine");
-    expect((screen.getByLabelText(/^Soggetti/) as HTMLTextAreaElement).value).toBe(""); // suggeriti: non importati di default
+    expect(screen.getByLabelText("Soggetto 1")).toHaveValue(""); // suggeriti: non importati di default
     expect(screen.getByLabelText(/^Note/)).toHaveValue("");
     expect(screen.getAllByText(/Importato da/).length).toBeGreaterThan(3);
     expect(api.all()).toHaveLength(0); // l'importazione non tocca il catalogo

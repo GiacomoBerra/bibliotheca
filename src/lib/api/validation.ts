@@ -6,12 +6,12 @@ export type FieldErrors = Partial<Record<keyof BookInput, string>>;
 /** Limiti identici ai CHECK della migrazione SQL. */
 export const LIMITS = {
   title: 500, isbn: 32, publisher: 300, publicationPlace: 300, publicationYear: 20, language: 50,
-  physicalDescription: 500, notes: 5000, dewey: 50, shelfMark: 100,
+  physicalDescription: 500, notes: 5000, dewey: 50, deweyNotes: 2000, shelfMark: 100,
 } as const;
 
 const LABELS: Record<keyof typeof LIMITS, string> = {
   title: "Titolo", isbn: "ISBN", publisher: "Editore", publicationPlace: "Luogo di pubblicazione", publicationYear: "Anno",
-  language: "Lingua", physicalDescription: "Descrizione fisica", notes: "Note", dewey: "Dewey", shelfMark: "Collocazione",
+  language: "Lingua", physicalDescription: "Descrizione fisica", notes: "Note", dewey: "Dewey", deweyNotes: "Annotazioni sulla Dewey", shelfMark: "Collocazione",
 };
 
 /** Errori bloccanti (validazione tecnica). Avvisi non bloccanti: vedi `warnings`. */

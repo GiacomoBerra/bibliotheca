@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import type { Db } from "./db";
 import { handle, type Deps } from "./router";
@@ -6,7 +6,9 @@ import { handle, type Deps } from "./router";
 /** Postgres reale (PGlite) con la migrazione vera, esposto come `Db`. */
 export async function makeTestDb(): Promise<{ db: Db; raw: PGlite }> {
   const raw = new PGlite();
-  await raw.exec(readFileSync("netlify/database/migrations/20261016000001_books.sql", "utf8"));
+  // Tutte le migrazioni vere, in ordine lessicografico (come le applica Netlify).
+  const dir = "netlify/database/migrations";
+  for (const f of readdirSync(dir).filter((x) => x.endsWith(".sql")).sort()) await raw.exec(readFileSync(`${dir}/${f}`, "utf8"));
   const db: Db = {
     async query<T>(text: string, params: unknown[] = []) {
       const r = await raw.query<T>(text, params);

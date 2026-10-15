@@ -1,8 +1,8 @@
-import { BOOK_STATUSES, emptyBookInput, type BookInput, type BookStatus, type MarcField } from "./types";
+import { BOOK_STATUSES, DEWEY_SOURCES, emptyBookInput, type BookInput, type BookStatus, type DeweySource, type MarcField } from "./types";
 import { checkStructure } from "../marc/structure";
 import { validateBook, type FieldErrors } from "./validation";
 
-const TEXT_FIELDS = ["title", "isbn", "publisher", "publicationPlace", "publicationYear", "language", "physicalDescription", "notes", "dewey", "shelfMark"] as const;
+const TEXT_FIELDS = ["title", "isbn", "publisher", "publicationPlace", "publicationYear", "language", "physicalDescription", "notes", "dewey", "deweyNotes", "shelfMark"] as const;
 const LIST_FIELDS = ["authors", "subjects"] as const;
 const MAX_LIST_ITEMS = 100;
 const MAX_ITEM_LEN = 500;
@@ -37,6 +37,10 @@ export function parseBookInput(raw: unknown): ParseResult {
       return { ok: false, errors: { _: `Il campo «${k}» deve essere un elenco di testi (al massimo ${MAX_LIST_ITEMS} voci da ${MAX_ITEM_LEN} caratteri).` } };
     }
     out[k] = v as string[];
+  }
+  if (o["deweySource"] !== undefined && o["deweySource"] !== null && o["deweySource"] !== "") {
+    if (typeof o["deweySource"] !== "string" || !(DEWEY_SOURCES as readonly string[]).includes(o["deweySource"])) return { ok: false, errors: { _: "Fonte della classificazione Dewey non valida." } };
+    out.deweySource = o["deweySource"] as DeweySource;
   }
   if (o["status"] !== undefined) {
     if (typeof o["status"] !== "string" || !(BOOK_STATUSES as readonly string[]).includes(o["status"])) return { ok: false, errors: { _: "Stato non valido." } };

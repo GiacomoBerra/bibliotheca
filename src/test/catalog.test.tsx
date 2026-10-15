@@ -140,9 +140,25 @@ describe("Inserimento", () => {
     const { api } = renderAt("/catalogo/nuovo");
     await user.type(await screen.findByLabelText("Titolo *"), "Multi");
     await user.type(screen.getByLabelText(/Autori/), "Rossi, Anna{Enter}Verdi, Luca");
-    await user.type(screen.getByLabelText(/Soggetti/), "Uno{Enter}{Enter}Due");
+    await user.type(screen.getByLabelText("Soggetto 1"), "Uno");
+    await user.click(screen.getByRole("button", { name: "Aggiungi un soggetto" }));
+    await user.type(screen.getByLabelText("Soggetto 2"), "Tre");
+    await user.click(screen.getByRole("button", { name: "Aggiungi un soggetto" }));
+    await user.type(screen.getByLabelText("Soggetto 3"), "Due");
+    await user.click(screen.getByRole("button", { name: "Rimuovi il soggetto 2" })); // modifica e rimozione
     await user.click(screen.getByRole("button", { name: "Salva la scheda" }));
     await waitFor(() => expect(api.all()[0]).toMatchObject({ authors: ["Rossi, Anna", "Verdi, Luca"], subjects: ["Uno", "Due"] }));
+  });
+  it("Dewey: notazione, origine della proposta e note si salvano e si rileggono; l'origine non è un'attestazione", async () => {
+    const user = userEvent.setup();
+    const { api } = renderAt("/catalogo/nuovo");
+    await user.type(await screen.findByLabelText("Titolo *"), "Classificato");
+    await user.type(screen.getByLabelText("Classificazione Dewey"), "853.914");
+    await user.selectOptions(screen.getByLabelText("Origine della proposta Dewey"), "fonte-esterna");
+    await user.type(screen.getByLabelText(/Annotazioni sulla Dewey/), "Da controllare sulle tavole");
+    expect(screen.getByText(/non ne attesta la correttezza/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Salva la scheda" }));
+    await waitFor(() => expect(api.all()[0]).toMatchObject({ dewey: "853.914", deweySource: "fonte-esterna", deweyNotes: "Da controllare sulle tavole" }));
   });
   it("errore del server in salvataggio: messaggio, nessun falso successo, resta nel modulo", async () => {
     const user = userEvent.setup();

@@ -6,7 +6,7 @@ import { ErrorBox, IllustrativeNote, Loading, StatusPill } from "@/components/ap
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
-import type { Book, MarcField } from "@/lib/api/types";
+import { DEWEY_SOURCE_LABELS, type Book, type MarcField } from "@/lib/api/types";
 import { useAsync } from "@/lib/useAsync";
 
 export const Route = createFileRoute("/_app/catalogo/$id/")({
@@ -69,7 +69,7 @@ function Dettaglio({ book: b }: { book: Book }) {
     ["Lingua", b.language || dash],
     ["Descrizione fisica", b.physicalDescription || dash],
     ["Soggetti", b.subjects.length ? <ul className="list-inside list-disc">{b.subjects.map((s, i) => <li key={i}>{s}</li>)}</ul> : dash],
-    ["Dewey", b.dewey ? <span className="font-mono">{b.dewey}</span> : dash],
+    ["Dewey", b.dewey ? <span><span className="font-mono">{b.dewey}</span>{b.deweySource ? <span className="block text-xs text-muted-foreground">{DEWEY_SOURCE_LABELS[b.deweySource]}</span> : null}{b.deweyNotes ? <span className="block text-xs text-muted-foreground">{b.deweyNotes}</span> : null}</span> : dash],
     ["Collocazione", b.shelfMark || dash],
     ["Note", b.notes ? <span className="whitespace-pre-line">{b.notes}</span> : dash],
     ["Stato", <StatusPill status={b.status} />],

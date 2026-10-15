@@ -3,6 +3,15 @@ import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
+/** Origine della proposta Dewey. Non attesta la correttezza: «verificata-ddc» è una dichiarazione di chi cataloga. */
+export const DEWEY_SOURCES = ["manuale", "fonte-esterna", "verificata-ddc"] as const;
+export type DeweySource = (typeof DEWEY_SOURCES)[number];
+export const DEWEY_SOURCE_LABELS: Record<DeweySource, string> = {
+  manuale: "Inserita a mano da chi cataloga",
+  "fonte-esterna": "Proposta da una fonte esterna (non verificata)",
+  "verificata-ddc": "Verificata sulle tavole DDC (dichiarazione di chi cataloga)",
+};
+
 /** Un sottocampo MARC21: codice di un carattere + valore. */
 export interface MarcSubfield { code: string; value: string }
 /** Campo di controllo (001–009): solo valore. */
@@ -24,6 +33,10 @@ export interface BookInput {
   notes: string;
   subjects: string[];
   dewey: string;
+  /** Note sulla scelta della notazione Dewey (edizione usata, motivazione…). */
+  deweyNotes: string;
+  /** "" = non indicata. */
+  deweySource: DeweySource | "";
   shelfMark: string;
   status: BookStatus;
   marcLeader: string | null;
@@ -75,7 +88,7 @@ export interface BooksApi {
 export function emptyBookInput(): BookInput {
   return {
     title: "", authors: [], isbn: "", publisher: "", publicationPlace: "", publicationYear: "",
-    language: "", physicalDescription: "", notes: "", subjects: [], dewey: "", shelfMark: "",
+    language: "", physicalDescription: "", notes: "", subjects: [], dewey: "", deweyNotes: "", deweySource: "", shelfMark: "",
     status: "bozza", marcLeader: null, marcFields: null,
   };
 }

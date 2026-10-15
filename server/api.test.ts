@@ -158,6 +158,13 @@ describe("Inserimento, modifica, cancellazione", () => {
     expect((await create(A, { title: "x", marcLeader: "troppo corto" })).status).toBe(400);
     expect((await create(A, { title: "Struttura MARC valida", marcLeader: "00000nam a2200000 a 4500", marcFields: [{ tag: "001", value: "id1" }] })).status).toBe(201);
   });
+  it("Dewey: notazione, fonte e note si salvano e si rileggono; fonte non valida rifiutata", async () => {
+    const r = await create(A, { title: "Dewey salvata", dewey: "853.914", deweySource: "fonte-esterna", deweyNotes: "DDC 23? da controllare" });
+    expect(r.status).toBe(201);
+    expect((await call("GET", `/api/books/${r.json.id}`, { user: A })).json).toMatchObject({ dewey: "853.914", deweySource: "fonte-esterna", deweyNotes: "DDC 23? da controllare" });
+    expect((await create(A, { title: "x", deweySource: "inventata" })).status).toBe(400);
+    expect((await create(A, { title: "x", deweyNotes: "a".repeat(2001) })).status).toBe(400);
+  });
   it("modifica e cancellazione, con 404 sulla seconda cancellazione", async () => {
     const id = (await create(A, { title: "Da modificare", subjects: ["Uno"] })).json.id;
     const up = await call("PUT", `/api/books/${id}`, { user: A, body: { title: "Modificato", status: "catalogato", subjects: ["Due", "Tre"] } });
