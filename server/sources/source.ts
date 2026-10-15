@@ -45,3 +45,19 @@ export async function getJson(url: string, ctx: SourceContext, headers: Record<s
     throw new SourceError("errore", "Risposta della fonte non leggibile.");
   }
 }
+
+export async function getText(url: string, ctx: SourceContext, accept = "application/xml, text/xml"): Promise<string> {
+  let res: Response;
+  try {
+    res = await ctx.fetch(url, { signal: ctx.signal, headers: { accept, "user-agent": ctx.userAgent } });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new SourceError("errore", "La fonte non è raggiungibile.");
+  }
+  if (res.status === 429) throw new SourceError("non_disponibile", "La fonte ha limitato le richieste: riprova tra qualche minuto.");
+  if (res.status === 401 || res.status === 403) throw new SourceError("non_disponibile", "La fonte rifiuta le richieste.");
+  if (!res.ok) throw new SourceError("errore", `La fonte ha risposto con un errore (${res.status}).`);
+  const text = await res.text();
+  if (text.length > 2_000_000) throw new SourceError("errore", "Risposta della fonte troppo grande.");
+  return text;
+}

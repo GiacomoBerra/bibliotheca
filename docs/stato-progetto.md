@@ -28,3 +28,8 @@ Non sono test automatici né verifiche in produzione.
 
 ## Produzione
 Nessuna verifica: nessuna pubblicazione effettuata.
+
+## Avanzamento sviluppo (branch feature/sviluppo-funzioni-complete)
+| Fase | Stato | Note |
+|---|---|---|
+| 1. Ricerca vocale e bibliografica | implementata, testata (simulazione) | Open Library, Google Books, LoC (SRU); scelta manuale/assistita; fonti reali da verificare su preview |

@@ -3,6 +3,7 @@ import { checkIsbn } from "../../src/lib/api/isbn";
 import type { LookupQuery, LookupResponse, SourceRecord, SourceReport } from "../../src/lib/sources/types";
 import { classify, groupRecords, rankGroups } from "./match";
 import { googleBooks } from "./googlebooks";
+import { loc } from "./loc";
 import { openLibrary } from "./openlibrary";
 import { SourceError, type Source } from "./source";
 
@@ -52,7 +53,7 @@ export interface LookupOptions {
  * Cache e limiti sono in memoria dell'istanza della Function (best effort): su Netlify ogni istanza ha la sua.
  */
 export function createLookup(opts: LookupOptions) {
-  const sources = opts.sources ?? [openLibrary, googleBooks];
+  const sources = opts.sources ?? [openLibrary, googleBooks, loc];
   const now = opts.now ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const timeoutMs = opts.timeoutMs ?? 6000;

@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { createLookup, LookupError, parseLookupQuery } from "./lookup";
-import { parseVolume } from "./googlebooks";
-import { parseEdition, parseWorkDoc } from "./openlibrary";
+import { googleBooks, parseVolume } from "./googlebooks";
+import { openLibrary, parseEdition, parseWorkDoc } from "./openlibrary";
 import { groupRecords, norm, normTitle, sameEdition, surname } from "./match";
+import { loc, buildLocUrl, parseLocRecord, parseMarcXmlRecords } from "./loc";
 import { toIsbn10, toIsbn13 } from "../../src/lib/sources/isbn";
 import type { SourceRecord } from "../../src/lib/sources/types";
 
@@ -22,23 +23,24 @@ const gbItem = (over: object = {}, info: object = {}) => ({
 });
 
 type Handler = (url: URL, init?: RequestInit) => Response | Promise<Response>;
-function fakeFetch(handlers: { ol?: Handler; gb?: Handler }) {
+function fakeFetch(handlers: { ol?: Handler; gb?: Handler; loc?: Handler }) {
   const calls: URL[] = [];
   const f = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     calls.push(url);
-    const h = url.hostname === "openlibrary.org" ? handlers.ol : url.hostname === "www.googleapis.com" ? handlers.gb : undefined;
+    const h = url.hostname === "openlibrary.org" ? handlers.ol : url.hostname === "www.googleapis.com" ? handlers.gb : url.hostname === "lx2.loc.gov" ? (handlers.loc ?? locEmpty) : undefined;
     if (!h) throw new Error("rete non simulata: " + url.hostname);
     return h(url, init);
   });
   return { f: f as unknown as typeof fetch, calls, spy: f };
 }
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
+const locEmpty: Handler = () => new Response('<searchRetrieveResponse><numberOfRecords>0</numberOfRecords></searchRetrieveResponse>', { status: 200 });
 const olOk: Handler = (u) => json(u.pathname === "/api/books" ? olEdition() : olSearch);
 const gbOk: Handler = () => json({ items: [gbItem()] });
-const lookup = (h: { ol?: Handler; gb?: Handler }, o: Parameters<typeof createLookup>[0] extends infer T ? Partial<T> : never = {}) => {
+const lookup = (h: { ol?: Handler; gb?: Handler; loc?: Handler }, o: Parameters<typeof createLookup>[0] extends infer T ? Partial<T> : never = {}) => {
   const ff = fakeFetch(h);
-  return { ...ff, lk: createLookup({ fetch: ff.f, sleep: async () => {}, ...o } as never) };
+  return { ...ff, lk: createLookup({ fetch: ff.f, sleep: async () => {}, sources: [openLibrary, googleBooks], ...o } as never) };
 };
 const q = (s: string) => parseLookupQuery(new URLSearchParams(s));
 
@@ -268,5 +270,47 @@ describe("Il codice client non contiene segreti né chiamate dirette alle fonti"
     const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
     const offenders = walk("src").filter((f) => /\.(tsx?|css|html)$/.test(f) && !f.endsWith(".test.ts") && !f.endsWith(".test.tsx")).filter((f) => /GOOGLE_BOOKS_API_KEY|googleapis\.com|openlibrary\.org\/(api|search)|[?&]key=/.test(readFileSync(f, "utf8")));
     expect(offenders).toEqual([]);
+  });
+});
+
+const MARCXML = `<?xml version="1.0"?><searchRetrieveResponse xmlns="http://www.loc.gov/zing/srw/"><numberOfRecords>1</numberOfRecords><records><record><recordData>
+<record xmlns="http://www.loc.gov/MARC21/slim"><leader>00000cam a2200000 a 4500</leader>
+<controlfield tag="001">  2005012345 </controlfield><controlfield tag="008">050101s1980    nyu           000 0 eng  </controlfield>
+<datafield tag="020" ind1=" " ind2=" "><subfield code="a">9780306406157 (alk. paper)</subfield></datafield>
+<datafield tag="100" ind1="1" ind2=" "><subfield code="a">Rossi, Anna.</subfield></datafield>
+<datafield tag="245" ind1="1" ind2="0"><subfield code="a">Libro di prova :</subfield><subfield code="b">con sottotitolo &amp; altro /</subfield><subfield code="c">Anna Rossi.</subfield></datafield>
+<datafield tag="260" ind1=" " ind2=" "><subfield code="a">New York :</subfield><subfield code="b">Alfa,</subfield><subfield code="c">1980.</subfield></datafield>
+<datafield tag="300" ind1=" " ind2=" "><subfield code="a">321 p. ;</subfield><subfield code="c">24 cm.</subfield></datafield>
+<datafield tag="650" ind1=" " ind2="0"><subfield code="a">Prova</subfield><subfield code="x">Storia.</subfield></datafield>
+</record></recordData></record></records></searchRetrieveResponse>`;
+
+describe("Library of Congress (SRU, risposta MARCXML SIMULATA: endpoint reale da verificare)", () => {
+  it("costruisce richieste SRU: ISBN, titolo+autore, testo libero; caratteri CQL neutralizzati", () => {
+    expect(decodeURIComponent(buildLocUrl({ isbn: "978-0-306-40615-7" }))).toContain("query=bath.isbn=9780306406157");
+    const u = new URL(buildLocUrl({ title: 'Il "nome"', author: "Eco" }));
+    expect(u.origin + u.pathname).toBe("http://lx2.loc.gov:210/LCDB");
+    expect(u.searchParams.get("query")).toBe('bath.title="Il nome" and bath.author="Eco"');
+    expect(u.searchParams.get("maximumRecords")).toBe("10");
+  });
+  it("legge un record MARCXML senza reinterpretarlo", () => {
+    const recs = parseMarcXmlRecords(MARCXML);
+    expect(recs).toHaveLength(1);
+    const r = parseLocRecord(recs[0]!)!;
+    expect(r).toMatchObject({ source: "loc", title: "Libro di prova", subtitle: "con sottotitolo & altro", authors: ["Rossi, Anna"], isbn13: "9780306406157", publisher: "Alfa", publicationPlace: "New York", publicationDate: "1980", pages: 321, language: "eng", externalId: "2005012345", granularity: "edizione" });
+    expect(r.subjects).toEqual(["Prova -- Storia"]);
+    expect(r.sourceUrl).toBe("https://lccn.loc.gov/2005012345");
+  });
+  it("record senza titolo scartato; risposta vuota → nessun risultato", () => {
+    expect(parseMarcXmlRecords("<x/>")).toEqual([]);
+    expect(parseLocRecord({ control: {}, fields: [] })).toBeNull();
+  });
+  it("integrata nel servizio: stesso ISBN di Open Library → un solo gruppo con due fonti; errore della LoC isolato", async () => {
+    const a = lookup({ ol: olOk, gb: gbOk, loc: () => new Response(MARCXML, { status: 200 }) }, { sources: [openLibrary, googleBooks, loc] });
+    const r = await a.lk.run(q(`isbn=${ISBN13}`), "u1");
+    expect(r.sources.find((s) => s.id === "loc")).toMatchObject({ status: "ok", count: 1 });
+    const b = lookup({ ol: olOk, gb: gbOk, loc: () => new Response("x", { status: 503 }) }, { sources: [openLibrary, googleBooks, loc] });
+    const r2 = await b.lk.run(q(`isbn=${ISBN13}`), "u2");
+    expect(r2.sources.find((s) => s.id === "loc")?.status).toBe("errore");
+    expect(r2.groups.length).toBeGreaterThan(0);
   });
 });

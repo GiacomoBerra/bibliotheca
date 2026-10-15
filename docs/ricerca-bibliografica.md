@@ -35,3 +35,6 @@ Riconoscimento vocale nativo del browser (`SpeechRecognition`), solo al clic, no
 2. Controllare se Google Books risponde senza chiave; altrimenti decidere se creare una chiave gratuita.
 3. Dettatura reale nei browser usati (Chrome, Safari, Firefox: il supporto varia).
 4. Il caso d'uso completo: dettare, trovare, scegliere, importare, salvare — richiede anche il database.
+
+## Library of Congress (aggiunta 15 ott 2026)
+Connettore `server/sources/loc.ts`. L'API JSON di loc.gov NON è usata: la documentazione ufficiale dichiara che non include i record del catalogo. Si usa SRU sul catalogo LCDB (`http://lx2.loc.gov:210/LCDB`, elencato nella pagina ufficiale dei server SRU della LoC; la query `bath.ISBN` è l'uso pubblico documentato da traduttori di terze parti). Stato: **implementata, testata con risposta MARCXML simulata; endpoint reale NON verificato** (non raggiungibile dall'ambiente di sviluppo). Gli indici `bath.title`/`bath.author` non sono confermati dalla documentazione consultata. Il traffico è HTTP non cifrato e contiene solo i termini cercati. Se la fonte non risponde, risulta «errore» e le altre fonti proseguono.

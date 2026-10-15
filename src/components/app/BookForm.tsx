@@ -32,6 +32,7 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     physicalDescription: initial.physicalDescription, notes: initial.notes, subjects: initial.subjects.join("\n"),
     dewey: initial.dewey, shelfMark: initial.shelfMark, status: initial.status as BookStatus,
   });
+  const [mode, setMode] = useState<"assistita" | "manuale">("assistita");
   const [dictLang, setDictLang] = useState<SpeechLang>("it");
   const [prov, setProv] = useState<Partial<Record<ImportField, string>>>({});
   const [lastImport, setLastImport] = useState<ImportResult["applied"] | null>(null);
@@ -109,7 +110,12 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
 
   return (
     <>
-    <BookLookup lang={dictLang} onLangChange={setDictLang} current={current} onApply={applyImport} onUndo={undo} canUndo={lastImport !== null} />
+    <fieldset className="mb-4 flex flex-wrap gap-4 text-sm">
+      <legend className="mb-1 font-medium">Modalità di inserimento</legend>
+      <label className="flex items-center gap-2"><input type="radio" name={`${uid}-mode`} checked={mode === "manuale"} onChange={() => setMode("manuale")} /> Inserimento manuale</label>
+      <label className="flex items-center gap-2"><input type="radio" name={`${uid}-mode`} checked={mode === "assistita"} onChange={() => setMode("assistita")} /> Ricerca assistita (testo o voce)</label>
+    </fieldset>
+    {mode === "assistita" && <BookLookup lang={dictLang} onLangChange={setDictLang} current={current} onApply={applyImport} onUndo={undo} canUndo={lastImport !== null} />}
     <form onSubmit={handle} noValidate className="space-y-6">
       <p className="text-sm text-muted-foreground">Solo il titolo è obbligatorio: puoi salvare una scheda incompleta come <strong>bozza</strong> e completarla in seguito.</p>
       {field("title", "Titolo *", (p) => <Input {...p} value={f.title} maxLength={LIMITS.title + 50} onChange={(e) => set("title", e.target.value)} />, undefined, dictate("title"))}

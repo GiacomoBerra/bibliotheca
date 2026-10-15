@@ -1,6 +1,6 @@
 /** Tipi condivisi tra server (Netlify Function) e interfaccia per la ricerca bibliografica su fonti esterne. */
 
-export type SourceId = "openlibrary" | "googlebooks";
+export type SourceId = "openlibrary" | "googlebooks" | "loc";
 
 /** Una scheda così come la restituisce UNA fonte. Nessun campo è stato dedotto o completato dall'app. */
 export interface SourceRecord {

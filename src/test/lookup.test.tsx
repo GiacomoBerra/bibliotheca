@@ -57,6 +57,19 @@ function renderAt(path: string, opts: { books?: ReturnType<typeof makeBook>[]; l
 }
 const panel = async () => within(await screen.findByRole("region", { name: "Cerca libro con la voce" }, { timeout: 3000 }).catch(async () => (await screen.findByText("Cerca libro con la voce")).closest("section")!) as HTMLElement);
 
+describe("Modalità di inserimento", () => {
+  it("manuale e ricerca assistita sono alternative esplicite; passando a manuale il modulo resta utilizzabile", async () => {
+    const user = userEvent.setup();
+    renderAt("/catalogo/nuovo");
+    expect(await screen.findByRole("heading", { name: "Cerca libro con la voce" })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Inserimento manuale" }));
+    expect(screen.queryByRole("heading", { name: "Cerca libro con la voce" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Titolo *")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Ricerca assistita/ }));
+    expect(screen.getByRole("heading", { name: "Cerca libro con la voce" })).toBeInTheDocument();
+  });
+});
+
 describe("Cerca libro con la voce: dettatura", () => {
   it("il pulsante è ben visibile; l'ascolto parte solo al clic, è segnalato, si può interrompere, la lingua è quella scelta", async () => {
     const user = userEvent.setup();
