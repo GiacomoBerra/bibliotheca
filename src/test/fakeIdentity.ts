@@ -1,10 +1,11 @@
 import type { IdentityApi } from "@/lib/auth/AuthProvider";
 
 type Listener = Parameters<IdentityApi["onAuthChange"]>[0];
-const USER = { id: "user-1", email: "proprietario@esempio.it" };
+const BASE_USER = { id: "user-1", email: "proprietario@esempio.it" };
 
 /** Finto @netlify/identity per testare i flussi dell'interfaccia (l'integrazione reale si prova su una Deploy Preview). */
-export function makeFakeIdentity(opts: { session?: boolean; callback?: { type: string; token?: string } | null; callbackThrows?: Error; loginError?: Error & { status?: number }; getUserThrows?: Error } = {}) {
+export function makeFakeIdentity(opts: { session?: boolean; callback?: { type: string; token?: string } | null; roles?: string[]; callbackThrows?: Error; loginError?: Error & { status?: number }; getUserThrows?: Error } = {}) {
+  const USER = { ...BASE_USER, roles: opts.roles ?? ["admin"] };
   let current: typeof USER | null = opts.session ? USER : null;
   const listeners = new Set<Listener>();
   const emit = (event: string, u: typeof USER | null) => { current = u; listeners.forEach((l) => l(event, u)); };

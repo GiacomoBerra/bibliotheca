@@ -2,25 +2,39 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import * as netlifyIdentity from "@netlify/identity";
 import { authErrorMessage } from "./messages";
 
+export interface IdentityUser { id: string; email?: string | undefined; roles?: readonly string[] | undefined }
+
 /** Parte di @netlify/identity usata dall'app: permette di sostituirla nei test. */
 export interface IdentityApi {
-  getUser(): Promise<{ id: string; email?: string | undefined } | null>;
+  getUser(): Promise<IdentityUser | null>;
   login(email: string, password: string): Promise<unknown>;
   logout(): Promise<void>;
   requestPasswordRecovery(email: string): Promise<void>;
   updateUser(updates: { password?: string }): Promise<unknown>;
   handleAuthCallback(): Promise<{ type: string; token?: string | undefined } | null>;
   acceptInvite(token: string, password: string): Promise<unknown>;
-  onAuthChange(cb: (event: string, user: { id: string; email?: string | undefined } | null) => void): () => void;
+  onAuthChange(cb: (event: string, user: IdentityUser | null) => void): () => void;
   refreshSession(): Promise<string | null>;
 }
 
 export type AuthStatus = "loading" | "unconfigured" | "anonymous" | "authenticated";
-export interface AuthUser { id: string; email?: string | undefined }
+export type AppRole = "admin" | "viewer";
+export interface AuthUser { id: string; email?: string | undefined; roles: readonly string[] }
+/** Ruolo effettivo (come sul server: admin prevale; ogni altro valore = nessun ruolo). Solo per l'interfaccia: i permessi veri li applica il server. */
+export function roleOf(user: Pick<AuthUser, "roles"> | null): AppRole | null {
+  if (!user) return null;
+  if (user.roles.includes("admin")) return "admin";
+  if (user.roles.includes("viewer")) return "viewer";
+  return null;
+}
 
 export interface AuthContextValue {
   status: AuthStatus;
   user: AuthUser | null;
+  /** Ruolo dell'utente (admin / viewer) o null se non ne ha uno. */
+  role: AppRole | null;
+  /** true se l'utente è amministratore (può modificare); la barriera vera è nel server. */
+  isAdmin: boolean;
   /** true se la sessione è terminata senza che l'utente abbia premuto "Esci" */
   sessionExpired: boolean;
   /** true dopo l'apertura del link di recupero password (l'utente è collegato per scegliere la nuova password) */
@@ -61,7 +75,8 @@ export function AuthProvider({ children, identity = realIdentity }: { children: 
   const manualSignOut = useRef(false);
   const hadSession = useRef(false);
 
-  const apply = useCallback((u: AuthUser | null) => {
+  const apply = useCallback((raw: IdentityUser | null) => {
+    const u: AuthUser | null = raw ? { id: raw.id, email: raw.email, roles: raw.roles ?? [] } : null;
     setUser(u);
     setStatus(u ? "authenticated" : "anonymous");
     if (u) hadSession.current = true;
@@ -167,7 +182,7 @@ export function AuthProvider({ children, identity = realIdentity }: { children: 
   }, [apply]);
 
   const value = useMemo<AuthContextValue>(() => ({
-    status, user, sessionExpired, recoveryMode, inviteToken, linkError,
+    status, user, role: roleOf(user), isAdmin: roleOf(user) === "admin", sessionExpired, recoveryMode, inviteToken, linkError,
     signIn, signOut, requestPasswordReset, updatePassword, acceptInvite, refresh, expireSession,
     clearSessionExpired: () => setSessionExpired(false),
   }), [status, user, sessionExpired, recoveryMode, inviteToken, linkError, signIn, signOut, requestPasswordReset, updatePassword, acceptInvite, refresh, expireSession]);

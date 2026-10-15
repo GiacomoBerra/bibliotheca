@@ -1,3 +1,4 @@
+import { useAuth } from "@/lib/auth/AuthProvider";
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookPlus, Library, Search, SearchX } from "lucide-react";
@@ -29,6 +30,7 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 function Catalogo() {
+  const { isAdmin } = useAuth();
   const api = useBooksApi();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<BookStatus | "tutti">("tutti");
@@ -56,7 +58,7 @@ function Catalogo() {
       <PageHeader
         title="Catalogo"
         description="Cerca per titolo, autore, ISBN, editore, soggetto, Dewey o collocazione."
-        actions={<Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button>}
+        actions={isAdmin ? <Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button> : undefined}
       />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_11rem_12rem_9rem]">
         <div className="space-y-1.5">
@@ -104,8 +106,8 @@ function Catalogo() {
           <EmptyState icon={SearchX} title="Nessun risultato" text="Nessun libro corrisponde ai criteri. Prova con meno parole, cambia lo stato o controlla l'ISBN."
             action={<Button variant="outline" onClick={() => { setQ(""); setStatus("tutti"); }}>Azzera ricerca e filtri</Button>} />
         ) : (
-          <EmptyState icon={Library} title="Il catalogo è vuoto" text="Aggiungi la prima scheda: basta il titolo, il resto si può completare in seguito."
-            action={<Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button>} />
+          <EmptyState icon={Library} title="Il catalogo è vuoto" text={isAdmin ? "Aggiungi la prima scheda: basta il titolo, il resto si può completare in seguito." : "Non ci sono ancora schede nel catalogo."}
+            action={isAdmin ? <Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button> : undefined} />
         )
       ) : data ? (
         <div aria-busy={loading}>

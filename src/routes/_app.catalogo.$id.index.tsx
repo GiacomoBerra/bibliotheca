@@ -1,3 +1,4 @@
+import { useAuth } from "@/lib/auth/AuthProvider";
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FileCode2, Pencil, Trash2 } from "lucide-react";
@@ -37,6 +38,7 @@ function Scheda() {
 }
 
 function Dettaglio({ book: b }: { book: Book }) {
+  const { isAdmin } = useAuth();
   const api = useBooksApi();
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
@@ -82,10 +84,10 @@ function Dettaglio({ book: b }: { book: Book }) {
           <h1 className="break-words text-3xl font-semibold">{b.title}</h1>
           {subtitle && <p className="mt-1 text-muted-foreground">{subtitle}</p>}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {isAdmin && <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline"><Link to="/catalogo/$id/modifica" params={{ id: b.id }}><Pencil aria-hidden /> Modifica</Link></Button>
           <Button variant="outline" className="text-destructive" onClick={() => setConfirm(true)}><Trash2 aria-hidden /> Cancella</Button>
-        </div>
+        </div>}
       </div>
 
       <section aria-labelledby="bib" className="rounded-lg border bg-card p-6">

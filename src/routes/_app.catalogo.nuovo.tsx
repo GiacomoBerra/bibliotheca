@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { BookForm } from "@/components/app/BookForm";
-import { PageHeader } from "@/components/app/common";
+import { AdminOnly, PageHeader } from "@/components/app/common";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
 import { emptyBookInput } from "@/lib/api/types";
 
@@ -17,6 +17,7 @@ function Nuovo() {
     <>
       <Link to="/catalogo" className="mb-4 inline-flex items-center gap-1 text-sm text-primary hover:underline"><ArrowLeft className="h-4 w-4" aria-hidden /> Torna al catalogo</Link>
       <PageHeader title="Nuovo libro" />
+      <AdminOnly>
       <BookForm
         initial={emptyBookInput()}
         submitLabel="Salva la scheda"
@@ -26,6 +27,7 @@ function Nuovo() {
           await navigate({ to: "/catalogo/$id", params: { id: book.id } });
         }}
       />
+      </AdminOnly>
     </>
   );
 }

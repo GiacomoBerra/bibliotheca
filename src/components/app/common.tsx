@@ -1,3 +1,4 @@
+import { useAuth } from "@/lib/auth/AuthProvider";
 import type { ReactNode } from "react";
 import { AlertTriangle, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,18 @@ export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof I
       <h2 className="mt-3 text-xl font-semibold">{title}</h2>
       <p className="mt-1 max-w-md text-sm text-muted-foreground">{text}</p>
       {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+/** Mostra i figli solo agli amministratori. Aiuto per l'interfaccia: la barriera vera è nel server (403). */
+export function AdminOnly({ children }: { children: ReactNode }) {
+  const { isAdmin } = useAuth();
+  if (isAdmin) return <>{children}</>;
+  return (
+    <div role="alert" className="rounded-lg border bg-card p-5">
+      <h2 className="text-lg font-semibold">Funzione riservata agli amministratori</h2>
+      <p className="mt-1 text-sm text-muted-foreground">Il tuo ruolo (visualizzatore) consente di consultare il catalogo, non di modificarlo.</p>
     </div>
   );
 }

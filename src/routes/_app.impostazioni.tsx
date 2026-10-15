@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_app/impostazioni")({
 
 function Impostazioni() {
   const api = useBooksApi();
-  const { user } = useAuth();
+  const { user, isAdmin, role } = useAuth();
   const [busy, setBusy] = useState<"json" | "csv" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -44,6 +44,8 @@ function Impostazioni() {
   return (
     <>
       <PageHeader title="Backup e impostazioni" description="Non c'è un backup automatico incluso: esporta il catalogo con regolarità e conserva il file altrove." />
+      {isAdmin ? (
+        <>
       <h2 className="mb-4 text-xl font-semibold">Esportazione</h2>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col rounded-lg border bg-card p-5">
@@ -71,8 +73,13 @@ function Impostazioni() {
         <p className="flex items-center gap-2 text-sm text-muted-foreground"><Upload className="h-4 w-4" aria-hidden /> Il ripristino da JSON e l'importazione da CSV non sono ancora disponibili: servono prima un controllo delle righe con anteprima e un test di ripristino. Fino ad allora conserva i file esportati.</p>
       </div>
 
+        </>
+      ) : (
+        <p className="rounded-lg border bg-card p-5 text-sm text-muted-foreground">Esportazione e importazione sono riservate agli amministratori.</p>
+      )}
+
       <h2 className="mb-3 mt-10 text-xl font-semibold">Account</h2>
-      <p className="text-sm text-muted-foreground">Accesso come <strong className="text-foreground">{user?.email}</strong>. La registrazione è chiusa: gli account si creano per invito dalla dashboard di Netlify (Identity).</p>
+      <p className="text-sm text-muted-foreground">Accesso come <strong className="text-foreground">{user?.email}</strong> ({role === "admin" ? "amministratore" : "visualizzatore"}). La registrazione è chiusa: gli account si creano per invito dalla dashboard di Netlify (Identity).</p>
     </>
   );
 }
