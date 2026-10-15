@@ -1,4 +1,5 @@
 import { BooksApiError, mapHttpError, networkError } from "./errors";
+import type { LookupResponse } from "@/lib/sources/types";
 import type { Book, BookInput, BookPage, BooksApi, CatalogStats, ListOptions } from "./types";
 
 export interface HttpApiOptions {
@@ -61,6 +62,12 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
     deleteBook: async (id) => { await call("DELETE", `/api/books/${encodeURIComponent(id)}`); },
     getStats: async () => (await call("GET", "/api/stats")) as CatalogStats,
     listAllBooks: async () => ((await call("GET", "/api/export")) as { books: Book[] }).books,
+    lookupSources: async (q, o = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(q)) if (typeof v === "string" && v.trim()) p.set(k, v.trim());
+      if (o.refresh) p.set("refresh", "1");
+      return (await call("GET", `/api/lookup?${p.toString()}`)) as LookupResponse;
+    },
   };
 }
 

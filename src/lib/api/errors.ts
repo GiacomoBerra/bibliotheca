@@ -15,6 +15,8 @@ export const networkError = () =>
 export function mapHttpError(status: number, body: unknown): BooksApiError {
   const err = (body && typeof body === "object" ? (body as { error?: { code?: string; message?: string; fields?: Record<string, string> } }).error : undefined) ?? {};
   if (status === 401) return new BooksApiError("auth", "La sessione è scaduta. Accedi di nuovo per continuare.");
+  if (status === 403 && (err.code === "forbidden" || err.code === "no_role") && err.message) return new BooksApiError("auth", err.message);
+  if (status === 429) return new BooksApiError("unavailable", err.message ?? "Troppe richieste: riprova tra poco.");
   if (status === 403) return new BooksApiError("auth", "Operazione non consentita. Esci e accedi di nuovo; se continua, contatta il proprietario del catalogo.");
   if (status === 400 && err.code === "validation") {
     const detail = err.fields ? Object.values(err.fields).filter((v) => typeof v === "string").join(" ") : "";

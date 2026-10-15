@@ -1,3 +1,5 @@
+import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
+
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
 export type BookStatus = (typeof BOOK_STATUSES)[number];
 
@@ -66,6 +68,8 @@ export interface BooksApi {
   getStats(): Promise<CatalogStats>;
   /** Tutte le schede dell'utente (per l'esportazione/backup), lette a pagine. */
   listAllBooks(): Promise<Book[]>;
+  /** Cerca su fonti bibliografiche esterne (solo admin). Non modifica il catalogo. */
+  lookupSources(query: LookupQuery, opts?: { refresh?: boolean }): Promise<LookupResponse>;
 }
 
 export function emptyBookInput(): BookInput {

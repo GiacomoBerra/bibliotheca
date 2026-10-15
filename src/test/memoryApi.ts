@@ -7,7 +7,7 @@ export function makeBook(over: Partial<Book> & { id: string; title: string }): B
 }
 
 /** Livello dati in memoria con la stessa interfaccia di produzione, per testare le schermate. */
-export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string } = {}) {
+export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; lookup?: BooksApi["lookupSources"] } = {}) {
   let books = [...initial];
   let n = 100;
   const fail = () => { if (opts.failWith) throw new BooksApiError("network", opts.failWith); };
@@ -55,6 +55,7 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string } 
       };
     },
     async listAllBooks() { fail(); return books; },
+    lookupSources: opts.lookup ?? (async () => ({ groups: [], sources: [], cached: false })),
   };
   return api;
 }
