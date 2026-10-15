@@ -1,82 +1,133 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookPlus, Search, SearchX, Library } from "lucide-react";
-import { booksApi } from "@/lib/api/booksApi";
-import type { Book } from "@/lib/api/types";
-import { DemoBadge, PageHeader } from "@/components/app/common";
+import { BookPlus, Library, Search, SearchX } from "lucide-react";
+import { selectClass } from "@/components/app/BookForm";
+import { EmptyState, ErrorBox, Loading, PageHeader, StatusPill } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useBooksApi } from "@/lib/api/BooksApiContext";
+import { BOOK_STATUSES, type BookStatus, type SortDir, type SortKey } from "@/lib/api/types";
+import { useAsync } from "@/lib/useAsync";
 
 export const Route = createFileRoute("/_app/catalogo/")({
   head: () => ({
     meta: [
       { title: "Catalogo — Bibliotheca" },
-      { name: "description", content: "Elenco dei libri con ricerca per titolo, autore e ISBN." },
+      { name: "description", content: "Elenco dei libri con ricerca, filtri e ordinamento." },
     ],
   }),
-  loader: () => booksApi.listBooks(),
   component: Catalogo,
 });
 
-function Catalogo() {
-  const all = Route.useLoaderData();
-  const [q, setQ] = useState("");
-  const [books, setBooks] = useState<Book[]>(all);
-  const [open, setOpen] = useState(false);
+const PAGE_SIZE = 25;
 
-  useEffect(() => {
-    let live = true;
-    booksApi.listBooks(q).then((r) => live && setBooks(r));
-    return () => { live = false; };
-  }, [q]);
+function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setV(value), ms); return () => clearTimeout(t); }, [value, ms]);
+  return v;
+}
+
+function Catalogo() {
+  const api = useBooksApi();
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<BookStatus | "tutti">("tutti");
+  const [sort, setSort] = useState<SortKey>("aggiornamento");
+  const [dir, setDir] = useState<SortDir>("desc");
+  const [page, setPage] = useState(1);
+  const dq = useDebounced(q);
+
+  useEffect(() => { setPage(1); }, [dq, status, sort, dir]);
+
+  const { data, error, loading, reload } = useAsync(
+    () => api.listBooks({ query: dq, status, sort, dir, page, pageSize: PAGE_SIZE }),
+    [api, dq, status, sort, dir, page],
+  );
+  const filtering = dq.trim() !== "" || status !== "tutti";
+  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+
+  function onSort(v: SortKey) {
+    setSort(v);
+    setDir(v === "aggiornamento" ? "desc" : "asc");
+  }
 
   return (
     <>
       <PageHeader
         title="Catalogo"
-        description="Cerca per titolo, autore o ISBN."
-        actions={<Button onClick={() => setOpen(true)}><BookPlus aria-hidden /> Aggiungi libro</Button>}
+        description="Cerca per titolo, autore, ISBN, editore, soggetto, Dewey o collocazione."
+        actions={<Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button>}
       />
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="w-full max-w-md space-y-1.5">
+      <div className="mb-6 grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem_12rem_9rem]">
+        <div className="space-y-1.5">
           <Label htmlFor="cerca">Cerca nel catalogo</Label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input id="cerca" type="search" value={q} onChange={(e) => setQ(e.target.value)} className="pl-9" placeholder="Es. astronomia, Rossi, 9788800…" />
           </div>
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground" aria-live="polite">
-          {books.length} {books.length === 1 ? "risultato" : "risultati"} <DemoBadge />
+        <div className="space-y-1.5">
+          <Label htmlFor="stato">Stato</Label>
+          <select id="stato" className={selectClass} value={status} onChange={(e) => setStatus(e.target.value as BookStatus | "tutti")}>
+            <option value="tutti">Tutti</option>
+            {BOOK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ordina">Ordina per</Label>
+          <select id="ordina" className={selectClass} value={sort} onChange={(e) => onSort(e.target.value as SortKey)}>
+            <option value="aggiornamento">Ultima modifica</option>
+            <option value="titolo">Titolo</option>
+            <option value="autore">Autore</option>
+            <option value="anno">Anno</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="direzione">Direzione</Label>
+          <select id="direzione" className={selectClass} value={dir} onChange={(e) => setDir(e.target.value as SortDir)}>
+            <option value="asc">Crescente</option>
+            <option value="desc">Decrescente</option>
+          </select>
         </div>
       </div>
 
-      {all.length === 0 ? (
-        <Empty icon={Library} title="Il catalogo è vuoto" text="Quando aggiungerai i primi libri li troverai qui." />
-      ) : books.length === 0 ? (
-        <Empty icon={SearchX} title="Nessun risultato" text={`Nessun libro corrisponde a «${q.trim()}». Prova con meno parole o controlla l'ISBN.`} action={<Button variant="outline" onClick={() => setQ("")}>Azzera ricerca</Button>} />
-      ) : (
-        <>
+      <p className="mb-3 text-sm text-muted-foreground" aria-live="polite">
+        {data ? `${data.total} ${data.total === 1 ? "risultato" : "risultati"}` : " "}
+      </p>
+
+      {error ? (
+        <ErrorBox message={error} onRetry={reload} />
+      ) : loading && !data ? (
+        <Loading label="Caricamento del catalogo…" />
+      ) : data && data.total === 0 ? (
+        filtering ? (
+          <EmptyState icon={SearchX} title="Nessun risultato" text="Nessun libro corrisponde ai criteri. Prova con meno parole, cambia lo stato o controlla l'ISBN."
+            action={<Button variant="outline" onClick={() => { setQ(""); setStatus("tutti"); }}>Azzera ricerca e filtri</Button>} />
+        ) : (
+          <EmptyState icon={Library} title="Il catalogo è vuoto" text="Aggiungi la prima scheda: basta il titolo, il resto si può completare in seguito."
+            action={<Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button>} />
+        )
+      ) : data ? (
+        <div aria-busy={loading}>
           <div className="hidden overflow-hidden rounded-lg border bg-card md:block">
             <table className="w-full text-sm">
               <caption className="sr-only">Libri in catalogo</caption>
               <thead className="bg-muted text-left text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-semibold">Titolo</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">Autore</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Autori</th>
                   <th scope="col" className="px-4 py-3 font-semibold">ISBN</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Anno</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Stato</th>
                 </tr>
               </thead>
               <tbody>
-                {books.map((b) => (
+                {data.items.map((b) => (
                   <tr key={b.id} className="border-t hover:bg-muted/50">
-                    <td className="px-4 py-3"><Link to="/catalogo/$id" params={{ id: b.id }} className="font-medium text-primary hover:underline">{b.title}</Link></td>
-                    <td className="px-4 py-3">{b.author}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{b.isbn}</td>
-                    <td className="px-4 py-3">{b.year}</td>
+                    <td className="px-4 py-3"><Link to="/catalogo/$id" params={{ id: b.id }} className="break-words font-medium text-primary hover:underline">{b.title}</Link></td>
+                    <td className="px-4 py-3">{b.authors.join("; ") || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{b.isbn || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-4 py-3">{b.publicationYear || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3"><StatusPill status={b.status} /></td>
                   </tr>
                 ))}
@@ -84,12 +135,12 @@ function Catalogo() {
             </table>
           </div>
           <ul className="space-y-3 md:hidden">
-            {books.map((b) => (
+            {data.items.map((b) => (
               <li key={b.id}>
                 <Link to="/catalogo/$id" params={{ id: b.id }} className="block rounded-lg border bg-card p-4 hover:bg-muted/50">
-                  <p className="font-serif text-lg font-semibold text-primary">{b.title}</p>
-                  <p className="text-sm">{b.author} · {b.year}</p>
-                  <div className="mt-2 flex items-center justify-between">
+                  <p className="break-words font-serif text-lg font-semibold text-primary">{b.title}</p>
+                  <p className="text-sm">{[b.authors.join("; "), b.publicationYear].filter(Boolean).join(" · ") || "—"}</p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
                     <span className="font-mono text-xs text-muted-foreground">{b.isbn}</span>
                     <StatusPill status={b.status} />
                   </div>
@@ -97,72 +148,15 @@ function Catalogo() {
               </li>
             ))}
           </ul>
-        </>
-      )}
-      <AddBookDialog open={open} onOpenChange={setOpen} />
+          {pages > 1 && (
+            <nav aria-label="Paginazione" className="mt-6 flex items-center justify-between gap-3 text-sm">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Precedenti</Button>
+              <span>Pagina {data.page} di {pages}</span>
+              <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}>Successivi</Button>
+            </nav>
+          )}
+        </div>
+      ) : null}
     </>
-  );
-}
-
-function StatusPill({ status }: { status: Book["status"] }) {
-  const cls = status === "catalogato" ? "bg-primary/10 text-primary" : status === "bozza" ? "bg-muted text-muted-foreground" : "bg-warning text-warning-foreground";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{status}</span>;
-}
-
-function Empty({ icon: Icon, title, text, action }: { icon: typeof Library; title: string; text: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed bg-card px-6 py-14 text-center">
-      <Icon className="h-10 w-10 text-muted-foreground" aria-hidden />
-      <h2 className="mt-3 text-xl font-semibold">{title}</h2>
-      <p className="mt-1 max-w-md text-sm text-muted-foreground">{text}</p>
-      {action && <div className="mt-4">{action}</div>}
-    </div>
-  );
-}
-
-function AddBookDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [title, setTitle] = useState("");
-  const [isbn, setIsbn] = useState("");
-  const [touched, setTouched] = useState({ title: false, isbn: false });
-  const ids = { t: useId(), i: useId(), a: useId(), y: useId() };
-  const titleErr = touched.title && !title.trim() ? "Il titolo è obbligatorio." : "";
-  const isbnClean = isbn.replace(/[\s-]/g, "");
-  const isbnErr = touched.isbn && isbnClean && !/^(\d{9}[\dXx]|\d{13})$/.test(isbnClean) ? "L'ISBN deve avere 10 o 13 cifre (trattini e spazi ammessi)." : "";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Aggiungi libro</DialogTitle>
-          <DialogDescription>Form dimostrativo: il salvataggio non è ancora disponibile e nessun dato verrà registrato.</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-          <Field id={ids.t} label="Titolo *" error={titleErr}>
-            <Input id={ids.t} value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, title: true }))} aria-invalid={!!titleErr} aria-describedby={titleErr ? `${ids.t}-err` : undefined} />
-          </Field>
-          <Field id={ids.a} label="Autore (Cognome, Nome)"><Input id={ids.a} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field id={ids.i} label="ISBN" error={isbnErr}>
-              <Input id={ids.i} inputMode="numeric" value={isbn} onChange={(e) => setIsbn(e.target.value)} onBlur={() => setTouched((t) => ({ ...t, isbn: true }))} aria-invalid={!!isbnErr} aria-describedby={isbnErr ? `${ids.i}-err` : undefined} />
-            </Field>
-            <Field id={ids.y} label="Anno"><Input id={ids.y} inputMode="numeric" /></Field>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Chiudi</Button>
-            <Button type="submit" disabled title="Funzione non ancora disponibile">Salva (non disponibile)</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function Field({ id, label, error, children }: { id: string; label: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-      {error && <p id={`${id}-err`} className="text-sm text-destructive">{error}</p>}
-    </div>
   );
 }

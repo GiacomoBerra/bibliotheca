@@ -17,7 +17,9 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppDidatticaRouteImport } from './routes/_app.didattica'
 import { Route as AppImpostazioniRouteImport } from './routes/_app.impostazioni'
 import { Route as AppCatalogoIndexRouteImport } from './routes/_app.catalogo.index'
-import { Route as AppCatalogoIdRouteImport } from './routes/_app.catalogo.$id'
+import { Route as AppCatalogoNuovoRouteImport } from './routes/_app.catalogo.nuovo'
+import { Route as AppCatalogoIdIndexRouteImport } from './routes/_app.catalogo.$id.index'
+import { Route as AppCatalogoIdModificaRouteImport } from './routes/_app.catalogo.$id.modifica'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,9 +60,19 @@ const AppCatalogoIndexRoute = AppCatalogoIndexRouteImport.update({
   path: '/catalogo/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppCatalogoIdRoute = AppCatalogoIdRouteImport.update({
-  id: '/catalogo/$id',
-  path: '/catalogo/$id',
+const AppCatalogoNuovoRoute = AppCatalogoNuovoRouteImport.update({
+  id: '/catalogo/nuovo',
+  path: '/catalogo/nuovo',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCatalogoIdIndexRoute = AppCatalogoIdIndexRouteImport.update({
+  id: '/catalogo/$id/',
+  path: '/catalogo/$id/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCatalogoIdModificaRoute = AppCatalogoIdModificaRouteImport.update({
+  id: '/catalogo/$id/modifica',
+  path: '/catalogo/$id/modifica',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -71,8 +83,10 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
-  '/catalogo/$id': typeof AppCatalogoIdRoute
+  '/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/catalogo/': typeof AppCatalogoIndexRoute
+  '/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
+  '/catalogo/$id/': typeof AppCatalogoIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -81,8 +95,10 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
-  '/catalogo/$id': typeof AppCatalogoIdRoute
+  '/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/catalogo': typeof AppCatalogoIndexRoute
+  '/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
+  '/catalogo/$id': typeof AppCatalogoIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -93,8 +109,10 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/didattica': typeof AppDidatticaRoute
   '/_app/impostazioni': typeof AppImpostazioniRoute
-  '/_app/catalogo/$id': typeof AppCatalogoIdRoute
+  '/_app/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/_app/catalogo/': typeof AppCatalogoIndexRoute
+  '/_app/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
+  '/_app/catalogo/$id/': typeof AppCatalogoIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -105,8 +123,10 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
-    | '/catalogo/$id'
+    | '/catalogo/nuovo'
     | '/catalogo/'
+    | '/catalogo/$id/modifica'
+    | '/catalogo/$id/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -115,8 +135,10 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
-    | '/catalogo/$id'
+    | '/catalogo/nuovo'
     | '/catalogo'
+    | '/catalogo/$id/modifica'
+    | '/catalogo/$id'
   id:
     | '__root__'
     | '/'
@@ -126,8 +148,10 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/didattica'
     | '/_app/impostazioni'
-    | '/_app/catalogo/$id'
+    | '/_app/catalogo/nuovo'
     | '/_app/catalogo/'
+    | '/_app/catalogo/$id/modifica'
+    | '/_app/catalogo/$id/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -195,11 +219,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCatalogoIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/catalogo/$id': {
-      id: '/_app/catalogo/$id'
+    '/_app/catalogo/nuovo': {
+      id: '/_app/catalogo/nuovo'
+      path: '/catalogo/nuovo'
+      fullPath: '/catalogo/nuovo'
+      preLoaderRoute: typeof AppCatalogoNuovoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/catalogo/$id/': {
+      id: '/_app/catalogo/$id/'
       path: '/catalogo/$id'
-      fullPath: '/catalogo/$id'
-      preLoaderRoute: typeof AppCatalogoIdRouteImport
+      fullPath: '/catalogo/$id/'
+      preLoaderRoute: typeof AppCatalogoIdIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/catalogo/$id/modifica': {
+      id: '/_app/catalogo/$id/modifica'
+      path: '/catalogo/$id/modifica'
+      fullPath: '/catalogo/$id/modifica'
+      preLoaderRoute: typeof AppCatalogoIdModificaRouteImport
       parentRoute: typeof AppRoute
     }
   }
@@ -209,16 +247,20 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppDidatticaRoute: typeof AppDidatticaRoute
   AppImpostazioniRoute: typeof AppImpostazioniRoute
-  AppCatalogoIdRoute: typeof AppCatalogoIdRoute
+  AppCatalogoNuovoRoute: typeof AppCatalogoNuovoRoute
   AppCatalogoIndexRoute: typeof AppCatalogoIndexRoute
+  AppCatalogoIdModificaRoute: typeof AppCatalogoIdModificaRoute
+  AppCatalogoIdIndexRoute: typeof AppCatalogoIdIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppDidatticaRoute: AppDidatticaRoute,
   AppImpostazioniRoute: AppImpostazioniRoute,
-  AppCatalogoIdRoute: AppCatalogoIdRoute,
+  AppCatalogoNuovoRoute: AppCatalogoNuovoRoute,
   AppCatalogoIndexRoute: AppCatalogoIndexRoute,
+  AppCatalogoIdModificaRoute: AppCatalogoIdModificaRoute,
+  AppCatalogoIdIndexRoute: AppCatalogoIdIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

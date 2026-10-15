@@ -5,14 +5,18 @@ import { describe, expect, it } from "vitest";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { safeRedirect } from "@/lib/auth/redirect";
 import { authErrorMessage } from "@/lib/auth/messages";
+import { BooksApiProvider } from "@/lib/api/BooksApiContext";
 import { routeTree } from "@/routeTree.gen";
+import { makeMemoryApi } from "./memoryApi";
 import { makeFakeAuthClient } from "./fakeSupabase";
 
 function renderApp(path: string, fake: ReturnType<typeof makeFakeAuthClient> | null) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
   render(
     <AuthProvider client={fake ? fake.client : null}>
-      <RouterProvider router={router} />
+      <BooksApiProvider api={makeMemoryApi()}>
+        <RouterProvider router={router} />
+      </BooksApiProvider>
     </AuthProvider>,
   );
   return router;

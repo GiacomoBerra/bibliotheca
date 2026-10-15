@@ -1,46 +1,78 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, Upload } from "lucide-react";
-import { PageHeader } from "@/components/app/common";
+import { ErrorBox, PageHeader } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
+import { useBooksApi } from "@/lib/api/BooksApiContext";
+import { useAuth } from "@/lib/auth/AuthProvider";
+import { booksToCsv, booksToJson, downloadText } from "@/lib/export";
 
 export const Route = createFileRoute("/_app/impostazioni")({
   head: () => ({
     meta: [
       { title: "Backup e impostazioni — Bibliotheca" },
-      { name: "description", content: "Import ed export del catalogo in JSON e CSV (in arrivo)." },
+      { name: "description", content: "Esportazione del catalogo in JSON e CSV." },
     ],
   }),
   component: Impostazioni,
 });
 
-const items = [
-  { icon: Download, title: "Esporta in JSON", text: "Scaricherà una copia completa del catalogo, utile come backup fedele da reimportare." },
-  { icon: Download, title: "Esporta in CSV", text: "Scaricherà una tabella apribile con un foglio di calcolo, per consultazione e condivisione." },
-  { icon: Upload, title: "Importa da JSON", text: "Ripristinerà un backup, con anteprima e conferma prima di modificare i dati." },
-  { icon: Upload, title: "Importa da CSV", text: "Caricherà libri da una tabella, con controllo delle colonne e segnalazione degli errori riga per riga." },
-];
-
 function Impostazioni() {
+  const api = useBooksApi();
+  const { user } = useAuth();
+  const [busy, setBusy] = useState<"json" | "csv" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  async function run(kind: "json" | "csv") {
+    setBusy(kind);
+    setError(null);
+    setDone(null);
+    try {
+      const books = await api.listAllBooks();
+      const stamp = new Date().toISOString().slice(0, 10);
+      if (kind === "json") downloadText(`bibliotheca-backup-${stamp}.json`, booksToJson(books), "application/json");
+      else downloadText(`bibliotheca-catalogo-${stamp}.csv`, booksToCsv(books), "text/csv");
+      setDone(`Esportate ${books.length} ${books.length === 1 ? "scheda" : "schede"}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Esportazione non riuscita.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <>
-      <PageHeader title="Backup e impostazioni" description="Sezione progettuale: le funzioni sono descritte ma non ancora attive." />
-      <h2 className="mb-4 text-xl font-semibold">Import ed export</h2>
+      <PageHeader title="Backup e impostazioni" description="Il piano gratuito di Supabase non include backup automatici: esporta il catalogo con regolarità e conserva il file altrove." />
+      <h2 className="mb-4 text-xl font-semibold">Esportazione</h2>
       <div className="grid gap-4 sm:grid-cols-2">
-        {items.map((it) => (
-          <div key={it.title} className="flex flex-col rounded-lg border bg-card p-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">{it.title}</h3>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">In arrivo</span>
-            </div>
-            <p className="mt-2 flex-1 text-sm text-muted-foreground">{it.text}</p>
-            <Button className="mt-4 h-auto min-h-9 max-w-full self-start whitespace-normal text-left" variant="outline" disabled>
-              <it.icon aria-hidden /> {it.title} (non disponibile)
-            </Button>
-          </div>
-        ))}
+        <div className="flex flex-col rounded-lg border bg-card p-5">
+          <h3 className="text-lg font-semibold">Esporta in JSON</h3>
+          <p className="mt-2 flex-1 text-sm text-muted-foreground">Copia completa e fedele di tutte le schede, compresi gli eventuali dati MARC21 salvati. È il formato di backup. Non è un file MARC interoperabile.</p>
+          <Button className="mt-4 self-start" variant="outline" disabled={busy !== null} onClick={() => void run("json")}>
+            <Download aria-hidden /> {busy === "json" ? "Esportazione…" : "Scarica il backup JSON"}
+          </Button>
+        </div>
+        <div className="flex flex-col rounded-lg border bg-card p-5">
+          <h3 className="text-lg font-semibold">Esporta in CSV</h3>
+          <p className="mt-2 flex-1 text-sm text-muted-foreground">Tabella apribile con un foglio di calcolo, per consultazione. Non contiene i dati MARC21 completi.</p>
+          <Button className="mt-4 self-start" variant="outline" disabled={busy !== null} onClick={() => void run("csv")}>
+            <Download aria-hidden /> {busy === "csv" ? "Esportazione…" : "Scarica il CSV"}
+          </Button>
+        </div>
       </div>
+      <div className="mt-4 space-y-3" aria-live="polite">
+        {done && <p role="status" className="text-sm">{done}</p>}
+        {error && <ErrorBox message={error} />}
+      </div>
+
+      <h2 className="mb-3 mt-10 text-xl font-semibold">Importazione</h2>
+      <div className="rounded-lg border bg-card p-5">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground"><Upload className="h-4 w-4" aria-hidden /> Il ripristino da JSON e l'importazione da CSV non sono ancora disponibili: servono prima un controllo delle righe con anteprima e un test di ripristino. Fino ad allora conserva i file esportati.</p>
+      </div>
+
       <h2 className="mb-3 mt-10 text-xl font-semibold">Account</h2>
-      <p className="text-sm text-muted-foreground">L'account privato con accesso su invito e la conservazione online dei dati saranno collegati in una fase successiva.</p>
+      <p className="text-sm text-muted-foreground">Accesso come <strong className="text-foreground">{user?.email}</strong>. La registrazione è chiusa: gli account si creano dalla dashboard di Supabase.</p>
     </>
   );
 }

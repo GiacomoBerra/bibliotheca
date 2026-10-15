@@ -32,7 +32,7 @@ export function ErrorPage({ error, reset }: ErrorComponentProps) {
       <div role="alert" className="max-w-md text-center">
         <h1 className="text-2xl font-semibold text-foreground">Questa pagina non si è caricata</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Si è verificato un problema imprevisto. Puoi riprovare oppure tornare alla pagina iniziale. I dati dimostrativi non sono stati modificati.
+          Si è verificato un problema imprevisto. Puoi riprovare oppure tornare alla pagina iniziale. Se stavi salvando una scheda, controlla nel catalogo che la modifica sia presente prima di ripeterla.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button

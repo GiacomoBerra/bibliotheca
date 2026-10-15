@@ -1,6 +1,6 @@
 import { Link, Outlet } from "@tanstack/react-router";
 import { BookOpen, GraduationCap, LayoutDashboard, Library, LogOut, Settings } from "lucide-react";
-import { UnavailableProvider } from "./common";
+
 import { useAuth } from "@/lib/auth/AuthProvider";
 
 const nav = [
@@ -13,7 +13,7 @@ const nav = [
 export function AppShell() {
   const { user, signOut } = useAuth();
   return (
-    <UnavailableProvider>
+    <>
       <a href="#contenuto" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-card focus:px-3 focus:py-2">
         Salta al contenuto
       </a>
@@ -52,6 +52,6 @@ export function AppShell() {
           </main>
         </div>
       </div>
-    </UnavailableProvider>
+    </>
   );
 }

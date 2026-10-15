@@ -1,0 +1,112 @@
+import { useId, useState, type FormEvent, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ErrorBox, IllustrativeNote } from "@/components/app/common";
+import { BOOK_STATUSES, type BookInput, type BookStatus } from "@/lib/api/types";
+import { LIMITS, validateBook, warnings, type FieldErrors } from "@/lib/api/validation";
+
+export const selectClass =
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+const textareaClass =
+  "min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+interface Props {
+  initial: BookInput;
+  submitLabel: string;
+  onSubmit: (input: BookInput) => Promise<void>;
+  onCancel: () => void;
+}
+
+export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
+  const uid = useId();
+  const [f, setF] = useState({
+    title: initial.title, authors: initial.authors.join("\n"), isbn: initial.isbn, publisher: initial.publisher,
+    publicationPlace: initial.publicationPlace, publicationYear: initial.publicationYear, language: initial.language,
+    physicalDescription: initial.physicalDescription, notes: initial.notes, subjects: initial.subjects.join("\n"),
+    dewey: initial.dewey, shelfMark: initial.shelfMark, status: initial.status as BookStatus,
+  });
+  const [submitted, setSubmitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
+
+  const toInput = (): BookInput => ({
+    title: f.title, authors: lines(f.authors), isbn: f.isbn, publisher: f.publisher, publicationPlace: f.publicationPlace,
+    publicationYear: f.publicationYear, language: f.language, physicalDescription: f.physicalDescription, notes: f.notes,
+    subjects: lines(f.subjects), dewey: f.dewey, shelfMark: f.shelfMark, status: f.status,
+    marcLeader: initial.marcLeader, marcFields: initial.marcFields,
+  });
+  const current = toInput();
+  const errors: FieldErrors = submitted ? validateBook(current) : {};
+  const warn = warnings(current);
+
+  async function handle(e: FormEvent) {
+    e.preventDefault();
+    setSubmitted(true);
+    setServerError(null);
+    const input = toInput();
+    if (Object.keys(validateBook(input)).length > 0) return;
+    setBusy(true);
+    try {
+      await onSubmit(input);
+    } catch (err) {
+      setServerError(err instanceof Error ? err.message : "Salvataggio non riuscito.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const id = (k: string) => `${uid}-${k}`;
+  const field = (k: keyof BookInput, label: string, control: (p: { id: string; "aria-invalid": boolean; "aria-describedby"?: string }) => ReactNode, hint?: string) => {
+    const err = errors[k];
+    const w = !err ? warn[k] : undefined;
+    const msg = err ?? w;
+    const props = { id: id(k), "aria-invalid": Boolean(err), ...(msg || hint ? { "aria-describedby": `${id(k)}-d` } : {}) };
+    return (
+      <div className="space-y-1.5">
+        <Label htmlFor={id(k)}>{label}</Label>
+        {control(props)}
+        {(msg || hint) && (
+          <p id={`${id(k)}-d`} className={`text-sm ${err ? "text-destructive" : w ? "text-warning-foreground" : "text-muted-foreground"}`}>{msg ?? hint}</p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <form onSubmit={handle} noValidate className="space-y-6">
+      <p className="text-sm text-muted-foreground">Solo il titolo è obbligatorio: puoi salvare una scheda incompleta come <strong>bozza</strong> e completarla in seguito.</p>
+      {field("title", "Titolo *", (p) => <Input {...p} value={f.title} maxLength={LIMITS.title + 50} onChange={(e) => set("title", e.target.value)} />)}
+      {field("authors", "Autori (uno per riga, es. «Rossi, Anna»)", (p) => <textarea {...p} className={textareaClass} value={f.authors} onChange={(e) => set("authors", e.target.value)} />)}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {field("isbn", "ISBN", (p) => <Input {...p} inputMode="text" value={f.isbn} onChange={(e) => set("isbn", e.target.value)} />)}
+        {field("publicationYear", "Anno di pubblicazione", (p) => <Input {...p} value={f.publicationYear} onChange={(e) => set("publicationYear", e.target.value)} />, "Testo libero: ammette forme come «c1998» o «[1998?]».")}
+        {field("publisher", "Editore", (p) => <Input {...p} value={f.publisher} onChange={(e) => set("publisher", e.target.value)} />)}
+        {field("publicationPlace", "Luogo di pubblicazione", (p) => <Input {...p} value={f.publicationPlace} onChange={(e) => set("publicationPlace", e.target.value)} />)}
+        {field("language", "Lingua", (p) => <Input {...p} value={f.language} onChange={(e) => set("language", e.target.value)} />, "Testo libero (es. «italiano»). Nessuna codifica ufficiale è verificata dall'app.")}
+        {field("physicalDescription", "Descrizione fisica", (p) => <Input {...p} value={f.physicalDescription} onChange={(e) => set("physicalDescription", e.target.value)} />)}
+      </div>
+      {field("subjects", "Soggetti (uno per riga)", (p) => <textarea {...p} className={textareaClass} value={f.subjects} onChange={(e) => set("subjects", e.target.value)} />, "Testo libero: i soggetti non sono controllati su nessuna fonte d'autorità.")}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {field("dewey", "Classificazione Dewey", (p) => <Input {...p} className="font-mono" value={f.dewey} onChange={(e) => set("dewey", e.target.value)} />, "Testo libero: la notazione non è verificata sulle tavole DDC.")}
+        {field("shelfMark", "Collocazione", (p) => <Input {...p} value={f.shelfMark} onChange={(e) => set("shelfMark", e.target.value)} />)}
+      </div>
+      {field("notes", "Note", (p) => <textarea {...p} className={textareaClass} value={f.notes} onChange={(e) => set("notes", e.target.value)} />)}
+      {field("status", "Stato della scheda", (p) => (
+        <select {...p} className={selectClass} value={f.status} onChange={(e) => set("status", e.target.value as BookStatus)}>
+          {BOOK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      ))}
+      {initial.marcFields && <p className="text-sm text-muted-foreground"><IllustrativeNote>Dati MARC salvati</IllustrativeNote> Questa scheda contiene un record MARC21 completo: questo modulo non lo modifica né lo sovrascrive.</p>}
+      {serverError && <ErrorBox message={serverError} />}
+      {submitted && Object.keys(errors).length > 0 && <p role="alert" className="text-sm text-destructive">Correggi i campi evidenziati prima di salvare.</p>}
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" disabled={busy}>{busy ? "Salvataggio…" : submitLabel}</Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={busy}>Annulla</Button>
+      </div>
+    </form>
+  );
+}

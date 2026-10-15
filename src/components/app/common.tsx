@@ -1,23 +1,7 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { FlaskConical, Info } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import type { ReactNode } from "react";
+import { AlertTriangle, Info, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-export function DemoBadge({ label = "Dati dimostrativi" }: { label?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-warning-foreground/30 bg-warning px-2.5 py-0.5 text-xs font-semibold text-warning-foreground">
-      <FlaskConical className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </span>
-  );
-}
+import type { BookStatus } from "@/lib/api/types";
 
 export function IllustrativeNote({ children = "Esempio illustrativo, non validato" }: { children?: ReactNode }) {
   return (
@@ -31,8 +15,8 @@ export function IllustrativeNote({ children = "Esempio illustrativo, non validat
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
     <div className="mb-8 flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="text-3xl font-semibold text-foreground">{title}</h1>
+      <div className="min-w-0">
+        <h1 className="break-words text-3xl font-semibold text-foreground">{title}</h1>
         {description && <p className="mt-2 max-w-2xl text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -40,27 +24,35 @@ export function PageHeader({ title, description, actions }: { title: string; des
   );
 }
 
-const UnavailableCtx = createContext<(feature: string) => void>(() => {});
-export const useUnavailable = () => useContext(UnavailableCtx);
+export function StatusPill({ status }: { status: BookStatus }) {
+  const cls = status === "catalogato" ? "bg-primary/10 text-primary" : status === "bozza" ? "bg-muted text-muted-foreground" : "bg-warning text-warning-foreground";
+  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{status}</span>;
+}
 
-export function UnavailableProvider({ children }: { children: ReactNode }) {
-  const [feature, setFeature] = useState<string | null>(null);
+export function Loading({ label = "Caricamento…" }: { label?: string }) {
   return (
-    <UnavailableCtx.Provider value={setFeature}>
-      {children}
-      <Dialog open={feature !== null} onOpenChange={(o) => !o && setFeature(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Funzione non ancora disponibile</DialogTitle>
-            <DialogDescription>
-              «{feature}» verrà realizzata in una fase successiva. Nessuna operazione è stata eseguita.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onClick={() => setFeature(null)}>Ho capito</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </UnavailableCtx.Provider>
+    <p role="status" className="flex items-center gap-2 py-10 text-muted-foreground">
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {label}
+    </p>
+  );
+}
+
+export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-5 text-destructive sm:flex-row sm:items-center sm:justify-between">
+      <p className="flex items-start gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> {message}</p>
+      {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>Riprova</Button>}
+    </div>
+  );
+}
+
+export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof Info; title: string; text: string; action?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center rounded-lg border border-dashed bg-card px-6 py-14 text-center">
+      <Icon className="h-10 w-10 text-muted-foreground" aria-hidden />
+      <h2 className="mt-3 text-xl font-semibold">{title}</h2>
+      <p className="mt-1 max-w-md text-sm text-muted-foreground">{text}</p>
+      {action && <div className="mt-4">{action}</div>}
+    </div>
   );
 }
