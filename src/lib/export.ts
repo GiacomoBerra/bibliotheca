@@ -1,12 +1,31 @@
+import type { Loan } from "./api/loans";
 import type { Book } from "./api/types";
 import { toReadableText } from "./marc/structure";
 
 export const BACKUP_FORMAT = "bibliotheca-backup";
-export const BACKUP_VERSION = 1;
+/** Versione 1: solo schede. Versione 2: schede + copie fisiche + prestiti (storico completo, comprese le restituzioni). */
+export const BACKUP_VERSION = 2;
 
-/** Copia completa e fedele delle schede. Non è un file MARC interoperabile. */
-export function booksToJson(books: Book[], now = new Date()): string {
-  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length, books }, null, 2);
+/** Un prestito nel backup. Gli stati (in ritardo, durata) non si salvano: si ricalcolano dalle date. `bookId` collega il prestito alla scheda del file. */
+export interface BackupLoan {
+  bookId: string; bookTitle: string; copyNo: number;
+  borrower: string; contact: string; notes: string;
+  loanDate: string; plannedDays: number; dueDate: string; returnedDate: string | null;
+}
+export const toBackupLoan = (l: Loan): BackupLoan => ({
+  bookId: l.bookId, bookTitle: l.bookTitle, copyNo: l.copyNo, borrower: l.borrower ?? "", contact: l.contact ?? "", notes: l.notes ?? "",
+  loanDate: l.loanDate, plannedDays: l.plannedDays, dueDate: l.dueDate, returnedDate: l.returnedDate,
+});
+
+/**
+ * Copia completa e fedele. Senza `loans` produce la versione 1 (solo schede); con `loans` (anche vuoto) la versione 2
+ * con `copies` e `loans`. Le copie fisiche sono elencate dai prestiti: oggi una copia esiste solo dopo il primo prestito.
+ * Non è un file MARC interoperabile.
+ */
+export function booksToJson(books: Book[], now = new Date(), loans?: Loan[]): string {
+  if (!loans) return JSON.stringify({ format: BACKUP_FORMAT, version: 1, exportedAt: now.toISOString(), count: books.length, books }, null, 2);
+  const copies = [...new Map(loans.map((l) => [`${l.bookId}#${l.copyNo}`, { bookId: l.bookId, copyNo: l.copyNo }])).values()];
+  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length, loanCount: loans.length, books, copies, loans: loans.map(toBackupLoan) }, null, 2);
 }
 
 /** Neutralizza le "formule" (=, +, -, @, tab, CR) quando il CSV viene aperto in un foglio di calcolo. */

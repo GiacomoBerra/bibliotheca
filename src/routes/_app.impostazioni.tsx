@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download } from "lucide-react";
-import { RestorePanel } from "@/components/app/RestorePanel";
+import { ImportPanel } from "@/components/app/ImportPanel";
 import { ErrorBox, PageHeader } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
 import { useAuth } from "@/lib/auth/AuthProvider";
+import { listEveryLoan, parseBackup } from "@/lib/backup";
 import { booksToCsv, booksToJson, booksToMarcText, downloadText } from "@/lib/export";
 
 export const Route = createFileRoute("/_app/impostazioni")({
@@ -25,11 +26,29 @@ function Impostazioni() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
+  /** Backup JSON completo (schede, copie, prestiti e storico): lo rilegge prima di salvarlo e controlla i conteggi. */
+  async function makeBackup(): Promise<{ books: number; loans: number }> {
+    const books = await api.listAllBooks();
+    const loans = await listEveryLoan(api);
+    const text = booksToJson(books, new Date(), loans);
+    const back = parseBackup(text);
+    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0) {
+      throw new Error("Il backup generato non supera il controllo di rilettura: non è stato salvato. Riprova; se il problema continua, non importare nulla.");
+    }
+    downloadText(`bibliotheca-backup-${new Date().toISOString().slice(0, 10)}.json`, text, "application/json");
+    return { books: books.length, loans: loans.length };
+  }
+
   async function run(kind: "json" | "csv" | "marc") {
     setBusy(kind);
     setError(null);
     setDone(null);
     try {
+      if (kind === "json") {
+        const b = await makeBackup();
+        setDone(`Backup salvato e verificato: ${b.books} schede e ${b.loans} prestiti (storico compreso).`);
+        return;
+      }
       const books = await api.listAllBooks();
       const stamp = new Date().toISOString().slice(0, 10);
       if (kind === "marc") {
@@ -39,8 +58,7 @@ function Impostazioni() {
         setDone(`Esportati ${m.count} record MARC21 in forma testuale.`);
         return;
       }
-      if (kind === "json") downloadText(`bibliotheca-backup-${stamp}.json`, booksToJson(books), "application/json");
-      else downloadText(`bibliotheca-catalogo-${stamp}.csv`, booksToCsv(books), "text/csv");
+      downloadText(`bibliotheca-catalogo-${stamp}.csv`, booksToCsv(books), "text/csv");
       setDone(`Esportate ${books.length} ${books.length === 1 ? "scheda" : "schede"}.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Esportazione non riuscita.");
@@ -58,7 +76,7 @@ function Impostazioni() {
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="flex flex-col rounded-lg border bg-card p-5">
           <h3 className="text-lg font-semibold">Esporta in JSON</h3>
-          <p className="mt-2 flex-1 text-sm text-muted-foreground">Copia completa e fedele di tutte le schede, compresi gli eventuali dati MARC21 salvati. È il formato di backup. Non è un file MARC interoperabile.</p>
+          <p className="mt-2 flex-1 text-sm text-muted-foreground">Copia completa e fedele di tutte le schede (con i dati MARC21 salvati), delle copie fisiche e dei prestiti con lo storico delle restituzioni. È il formato di backup. Non è un file MARC interoperabile.</p>
           <Button className="mt-4 self-start" variant="outline" disabled={busy !== null} onClick={() => void run("json")}>
             <Download aria-hidden /> {busy === "json" ? "Esportazione…" : "Scarica il backup JSON"}
           </Button>
@@ -84,7 +102,7 @@ function Impostazioni() {
       </div>
 
       <h2 className="mb-3 mt-10 text-xl font-semibold">Importazione</h2>
-      <RestorePanel onDownloadBackup={() => void run("json")} />
+      <ImportPanel onDownloadBackup={makeBackup} />
 
         </>
       ) : (

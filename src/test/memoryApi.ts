@@ -43,9 +43,9 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       if (!p.ok) throw new BooksApiError("validation", Object.values(p.errors).join(" "));
       const book = books.find((b) => b.id === bookId);
       if (!book) throw new BooksApiError("notfound", "Il libro non esiste più.");
-      if (loans.some((l) => l.bookId === bookId && !l.returnedDate)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
+      if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
       const dueDate = addDays(input.loanDate, input.plannedDays);
-      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: null, state: "in prestito", effectiveDays: null, daysLate: 0 });
+      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0 });
       loans = [l, ...loans];
       return l;
     },

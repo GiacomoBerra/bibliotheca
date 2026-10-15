@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { BooksApiProvider } from "@/lib/api/BooksApiContext";
 import { routeTree } from "@/routeTree.gen";
@@ -19,6 +19,7 @@ function renderSettings(books = [makeBook({ id: "11111111-1111-4111-8111-1111111
   );
   return api;
 }
+vi.mock("@/lib/export", async (orig) => ({ ...(await orig<typeof import("@/lib/export")>()), downloadText: vi.fn() }));
 const file = (text: string) => new File([text], "backup.json", { type: "application/json" });
 
 describe("Ripristino da backup (interfaccia)", () => {
@@ -39,6 +40,9 @@ describe("Ripristino da backup (interfaccia)", () => {
     expect(api.all()).toHaveLength(1); // nulla è cambiato
     const go = screen.getByRole("button", { name: "Ripristina" });
     expect(go).toBeDisabled(); // serve la conferma esplicita
+    expect(screen.getByRole("checkbox", { name: /confermo il ripristino/ })).toBeDisabled(); // serve prima il backup verificato
+    await user.click(screen.getByRole("button", { name: "Scarica e verifica il backup attuale" }));
+    expect(await screen.findByText(/Backup scaricato e verificato: 1 schede e 0 prestiti/)).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
     await user.click(go);
     const out = await screen.findByRole("region", { name: "Esito del ripristino" });
@@ -62,11 +66,47 @@ describe("Ripristino da backup (interfaccia)", () => {
     await user.upload(await screen.findByLabelText("File di backup (.json)"), file(backup));
     await screen.findByRole("region", { name: "Anteprima del ripristino" });
     await user.selectOptions(screen.getByLabelText(/Azione per «Esistente aggiornato»/), "aggiorna");
+    await user.click(screen.getByRole("button", { name: "Scarica e verifica il backup attuale" }));
+    await screen.findByText(/Backup scaricato e verificato/);
     await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
     await user.click(screen.getByRole("button", { name: "Ripristina" }));
     await screen.findByRole("region", { name: "Esito del ripristino" });
     expect(api.all()).toHaveLength(1);
     expect(api.all()[0]!.title).toBe("Esistente aggiornato");
+  });
+
+  it("catalogo vuoto: non serve il backup e l'importazione CSV funziona; la riga d'esempio del modello è rifiutata", async () => {
+    const user = userEvent.setup();
+    const api = renderSettings([]);
+    await user.click(await screen.findByRole("radio", { name: /File CSV/ }));
+    const csv = "titolo,autori,isbn,editore,anno,stato\r\n[ESEMPIO] Titolo del libro,\"Rossi, Anna | Verdi, Luca\",9780306406157,Alfa,1980,bozza\r\nLibro vero di prova,,,,,\r\n";
+    await user.upload(await screen.findByLabelText("File CSV (.csv)"), new File([csv], "catalogo.csv", { type: "text/csv" }));
+    const prev = await screen.findByRole("region", { name: "Anteprima del ripristino" });
+    expect(prev).toHaveTextContent(/1 valide, 1 con errori/);
+    expect(prev).toHaveTextContent(/riga di esempio/);
+    expect(prev).toHaveTextContent(/Il catalogo è vuoto/);
+    await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
+    await user.click(screen.getByRole("button", { name: "Ripristina" }));
+    await screen.findByRole("region", { name: "Esito del ripristino" });
+    expect(api.all().map((b) => b.title)).toEqual(["Libro vero di prova"]);
+  });
+
+  it("backup v2: ripristina anche i prestiti (storico e prestito in corso), una sola volta", async () => {
+    const user = userEvent.setup();
+    const api = renderSettings([]);
+    const bid = "33333333-3333-4333-8333-333333333333";
+    const text = JSON.stringify({ format: "bibliotheca-backup", version: 2, count: 1, loanCount: 2, books: [makeBook({ id: bid, title: "Con prestiti" })], copies: [{ bookId: bid, copyNo: 1 }], loans: [
+      { bookId: bid, bookTitle: "Con prestiti", copyNo: 1, borrower: "Anna", contact: "", notes: "", loanDate: "2026-08-01", plannedDays: 14, dueDate: "2026-08-15", returnedDate: "2026-08-12" },
+      { bookId: bid, bookTitle: "Con prestiti", copyNo: 1, borrower: "Bruno", contact: "", notes: "", loanDate: "2026-10-01", plannedDays: 30, dueDate: "2026-10-31", returnedDate: null },
+    ] });
+    await user.upload(await screen.findByLabelText("File di backup (.json)"), file(text));
+    expect(await screen.findByRole("region", { name: "Anteprima del ripristino" })).toHaveTextContent(/2 prestiti nel file/);
+    await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
+    await user.click(screen.getByRole("button", { name: "Ripristina" }));
+    const out = await screen.findByRole("region", { name: "Esito del ripristino" });
+    expect(out).toHaveTextContent(/2 prestiti ripristinati, 0 già presenti/);
+    expect(api.allLoans().map((l) => [l.borrower, l.returnedDate])).toEqual(expect.arrayContaining([["Anna", "2026-08-12"], ["Bruno", null]]));
+    expect(api.allLoans()).toHaveLength(2);
   });
 
   it("il visualizzatore non vede né esportazione né ripristino", async () => {

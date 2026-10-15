@@ -28,7 +28,8 @@ export interface Loan {
   daysLate: number;
 }
 
-export interface LoanInput { borrower: string; contact: string; loanDate: string; plannedDays: number; notes: string }
+/** `returnedDate`: solo per registrare un prestito già concluso (ripristino di backup o inserimento a posteriori). */
+export interface LoanInput { borrower: string; contact: string; loanDate: string; plannedDays: number; notes: string; returnedDate?: string | null }
 export interface LoanEditInput { borrower: string; contact: string; plannedDays: number; notes: string }
 
 export type LoanStateFilter = "attivi" | "in ritardo" | "restituiti" | "tutti";
@@ -91,15 +92,19 @@ export function parseLoanInput(raw: unknown): Parsed<LoanInput> {
   if (!isIsoDate(o.loanDate)) errors["loanDate"] = "Indica la data del prestito (formato AAAA-MM-GG).";
   const days = o.plannedDays;
   if (typeof days !== "number" || !Number.isInteger(days) || days < LOAN_LIMITS.minDays || days > LOAN_LIMITS.maxDays) errors["plannedDays"] = `La durata prevista deve essere un numero intero di giorni da ${LOAN_LIMITS.minDays} a ${LOAN_LIMITS.maxDays}.`;
+  const ret = o.returnedDate == null || o.returnedDate === "" ? null : o.returnedDate;
+  if (ret !== null && !isIsoDate(ret)) errors["returnedDate"] = "La data di restituzione non è valida (formato AAAA-MM-GG).";
+  else if (ret !== null && isIsoDate(o.loanDate) && ret < o.loanDate) errors["returnedDate"] = "La restituzione non può precedere l'inizio del prestito.";
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes! } };
+  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes!, ...(ret !== null ? { returnedDate: ret as string } : {}) } };
 }
 
 export function parseLoanEdit(raw: unknown): Parsed<LoanEditInput> {
   const o = (raw && typeof raw === "object" ? raw : {}) as RawLoan;
   const r = parseLoanInput({ ...o, loanDate: "2000-01-01" }); // la data di inizio non è modificabile
   if (!r.ok) return r;
-  const { loanDate: _unused, ...value } = r.value;
+  const { loanDate: _unused, returnedDate: _r, ...value } = r.value;
+  void _r;
   void _unused;
   return { ok: true, value };
 }

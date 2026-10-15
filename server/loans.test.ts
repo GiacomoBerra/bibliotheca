@@ -250,9 +250,9 @@ describe("Prestiti — ruoli e privacy (verificati lato server)", () => {
     expect((await call("GET", `/api/books/${id}/loans`)).status).toBe(401);
     expect((await call("GET", "/api/loans")).status).toBe(401);
     expect((await call("GET", `/api/books/${id}/loans`, { user: "u", roles: [] })).status).toBe(403);
-    const r = await admin("POST", `/api/books/${id}/loans`, { borrower: "Tizio", loanDate: "2026-10-01", plannedDays: 7, created_by: "falso", returnedDate: "2026-10-02", role: "admin" });
+    const r = await admin("POST", `/api/books/${id}/loans`, { borrower: "Tizio", loanDate: "2026-10-01", plannedDays: 7, created_by: "falso", returned_by: "falso", role: "admin" });
     expect(r.status).toBe(201);
-    expect((await raw.query("select created_by, returned_date from loans where id = $1", [r.json.id])).rows[0]).toEqual({ created_by: ADMIN, returned_date: null });
+    expect((await raw.query("select created_by, returned_date, returned_by from loans where id = $1", [r.json.id])).rows[0]).toEqual({ created_by: ADMIN, returned_date: null, returned_by: null });
   });
   it("le richieste che modificano richiedono l'intestazione anti-CSRF", async () => {
     const id = await newBook("Libro T");

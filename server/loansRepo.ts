@@ -73,14 +73,15 @@ export async function createLoan(db: Db, userId: string, bookId: string, input: 
   if (!isUuid(bookId) || (await db.query(`select 1 from books where id = $1`, [bookId])).rows.length === 0) throw new LoanError(404, "not_found", "Il libro non esiste più: nessun prestito registrato.");
   if (input.loanDate > today) throw new LoanError(400, "validation", "La data del prestito non può essere futura.", { loanDate: "La data del prestito non può essere futura." });
 
+  if (input.returnedDate && input.returnedDate > today) throw new LoanError(400, "validation", "La data di restituzione non può essere futura.", { returnedDate: "La data di restituzione non può essere futura." });
   await db.query(`insert into book_copies (book_id, copy_no) values ($1, $2) on conflict (book_id, copy_no) do nothing`, [bookId, copyNo]);
   const copy = (await db.query<{ id: string }>(`select id from book_copies where book_id = $1 and copy_no = $2`, [bookId, copyNo])).rows[0];
   if (!copy) throw new LoanError(404, "not_found", "Copia non trovata.");
   try {
     const r = await db.query<{ id: string }>(
-      `insert into loans (book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by)
-       values ($1, $2, $3, $4, $5::date, $6, $5::date + $6::int, $7, $8) returning id`,
-      [bookId, copy.id, input.borrower, input.contact || null, input.loanDate, input.plannedDays, input.notes || null, userId],
+      `insert into loans (book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by, returned_date, returned_by)
+       values ($1, $2, $3, $4, $5::date, $6, $5::date + $6::int, $7, $8, $9::date, $10) returning id`,
+      [bookId, copy.id, input.borrower, input.contact || null, input.loanDate, input.plannedDays, input.notes || null, userId, input.returnedDate ?? null, input.returnedDate ? userId : null],
     );
     return (await getLoan(db, r.rows[0]!.id, today))!;
   } catch (e) {
