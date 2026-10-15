@@ -41,5 +41,5 @@ export default async (req: Request): Promise<Response> =>
   });
 
 export const config: Config = {
-  path: ["/api/books", "/api/books/*", "/api/stats", "/api/export", "/api/lookup"],
+  path: ["/api/books", "/api/books/*", "/api/stats", "/api/export", "/api/lookup", "/api/loans", "/api/loans/*"],
 };

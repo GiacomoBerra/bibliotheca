@@ -17,6 +17,7 @@ import { Route as ReimpostaPasswordRouteImport } from './routes/reimposta-passwo
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppDidatticaRouteImport } from './routes/_app.didattica'
 import { Route as AppImpostazioniRouteImport } from './routes/_app.impostazioni'
+import { Route as AppPrestitiRouteImport } from './routes/_app.prestiti'
 import { Route as AppCatalogoIndexRouteImport } from './routes/_app.catalogo.index'
 import { Route as AppCatalogoNuovoRouteImport } from './routes/_app.catalogo.nuovo'
 import { Route as AppCatalogoIdIndexRouteImport } from './routes/_app.catalogo.$id.index'
@@ -61,6 +62,11 @@ const AppImpostazioniRoute = AppImpostazioniRouteImport.update({
   path: '/impostazioni',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPrestitiRoute = AppPrestitiRouteImport.update({
+  id: '/prestiti',
+  path: '/prestiti',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCatalogoIndexRoute = AppCatalogoIndexRouteImport.update({
   id: '/catalogo/',
   path: '/catalogo/',
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
+  '/prestiti': typeof AppPrestitiRoute
   '/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/catalogo/': typeof AppCatalogoIndexRoute
   '/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
@@ -103,6 +110,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
+  '/prestiti': typeof AppPrestitiRoute
   '/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/catalogo': typeof AppCatalogoIndexRoute
   '/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
@@ -118,6 +126,7 @@ export interface FileRoutesById {
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/didattica': typeof AppDidatticaRoute
   '/_app/impostazioni': typeof AppImpostazioniRoute
+  '/_app/prestiti': typeof AppPrestitiRoute
   '/_app/catalogo/nuovo': typeof AppCatalogoNuovoRoute
   '/_app/catalogo/': typeof AppCatalogoIndexRoute
   '/_app/catalogo/$id/modifica': typeof AppCatalogoIdModificaRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
+    | '/prestiti'
     | '/catalogo/nuovo'
     | '/catalogo/'
     | '/catalogo/$id/modifica'
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
+    | '/prestiti'
     | '/catalogo/nuovo'
     | '/catalogo'
     | '/catalogo/$id/modifica'
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/_app/dashboard'
     | '/_app/didattica'
     | '/_app/impostazioni'
+    | '/_app/prestiti'
     | '/_app/catalogo/nuovo'
     | '/_app/catalogo/'
     | '/_app/catalogo/$id/modifica'
@@ -232,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppImpostazioniRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/prestiti': {
+      id: '/_app/prestiti'
+      path: '/prestiti'
+      fullPath: '/prestiti'
+      preLoaderRoute: typeof AppPrestitiRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/catalogo/': {
       id: '/_app/catalogo/'
       path: '/catalogo'
@@ -267,6 +286,7 @@ interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRoute
   AppDidatticaRoute: typeof AppDidatticaRoute
   AppImpostazioniRoute: typeof AppImpostazioniRoute
+  AppPrestitiRoute: typeof AppPrestitiRoute
   AppCatalogoNuovoRoute: typeof AppCatalogoNuovoRoute
   AppCatalogoIndexRoute: typeof AppCatalogoIndexRoute
   AppCatalogoIdModificaRoute: typeof AppCatalogoIdModificaRoute
@@ -277,6 +297,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRoute,
   AppDidatticaRoute: AppDidatticaRoute,
   AppImpostazioniRoute: AppImpostazioniRoute,
+  AppPrestitiRoute: AppPrestitiRoute,
   AppCatalogoNuovoRoute: AppCatalogoNuovoRoute,
   AppCatalogoIndexRoute: AppCatalogoIndexRoute,
   AppCatalogoIdModificaRoute: AppCatalogoIdModificaRoute,

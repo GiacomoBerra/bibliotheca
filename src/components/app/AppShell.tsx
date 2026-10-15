@@ -1,17 +1,18 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { BookOpen, GraduationCap, LayoutDashboard, Library, LogOut, Settings } from "lucide-react";
+import { BookOpen, GraduationCap, HandHelping, LayoutDashboard, Library, LogOut, Settings } from "lucide-react";
 
 import { useAuth } from "@/lib/auth/AuthProvider";
 
-const nav = [
+const nav: { to: string; label: string; icon: typeof Library; adminOnly?: boolean }[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/catalogo", label: "Catalogo", icon: Library },
+  { to: "/prestiti", label: "Prestiti", icon: HandHelping, adminOnly: true },
   { to: "/didattica", label: "Modalità didattica", icon: GraduationCap },
   { to: "/impostazioni", label: "Backup e impostazioni", icon: Settings },
-] as const;
+];
 
 export function AppShell() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   return (
     <>
       <a href="#contenuto" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-card focus:px-3 focus:py-2">
@@ -25,7 +26,7 @@ export function AppShell() {
           </div>
           <nav aria-label="Navigazione principale" className="overflow-x-auto px-3 pb-3 md:flex-1">
             <ul className="flex gap-1 md:flex-col">
-              {nav.map(({ to, label, icon: Icon }) => (
+              {nav.filter((n) => !n.adminOnly || isAdmin).map(({ to, label, icon: Icon }) => (
                 <li key={to}>
                   <Link
                     to={to}

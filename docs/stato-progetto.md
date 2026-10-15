@@ -24,7 +24,7 @@ Non sono test automatici né verifiche in produzione.
 - Persistenza dopo le operazioni e dopo il cambio di account: confermata.
 
 ## Test automatici (eseguiti da Claude Code, Postgres reale in locale)
-193 test (ruoli, 403, CRUD, errori database, fonti simulate, voce simulata), build e controllo dei tipi OK.
+267 test (ruoli, 403, CRUD, errori database, fonti simulate, voce simulata, MARC, ripristino, prestiti), build e controllo dei tipi OK.
 
 ## Produzione
 Nessuna verifica: nessuna pubblicazione effettuata.
@@ -36,3 +36,12 @@ Nessuna verifica: nessuna pubblicazione effettuata.
 | 2. Editor MARC21 | implementata, testata (automatica) | vedi docs/marc21.md; regole verificate solo per 7 campi; da provare su preview |
 | 3. Soggetti, Dewey, collocazione | implementata, testata (automatica) | nuova migrazione additiva 0002 (dewey_notes, dewey_source); elenco soggetti modificabile; spiegazione didattica; nessuna validazione DDC |
 | 4. Backup, importazione, esportazioni | implementata, testata (automatica, anche su Postgres) | JSON/CSV/MARC testuale; ripristino con anteprima e conflitti; nessuna esportazione ISO 2709 |
+| 5. Prestiti | implementata, testata (automatica, PGlite e Postgres locale con driver pg) | nuova migrazione additiva 0003 (`book_copies`, `loans`); vedi sotto; da verificare su Deploy Preview |
+
+## Fase 5 — Prestiti (stato: implementata e testata in automatico; NON verificata su preview né in produzione)
+**Modello** (`netlify/database/migrations/20261016000003_loans.sql`, solo additiva): `book_copies` (copia fisica, oggi solo la n. 1 creata al primo prestito, ma il modello ammette più copie) e `loans` (un record per prestito, mai cancellato: destinatario, recapito facoltativo, data prestito, durata prevista, data prevista, data effettiva, note, chi ha registrato). Lo stato (in prestito / in ritardo / restituito) e la disponibilità sono **derivati** dalle date, non memorizzati.
+**Regole imposte dal database**: un solo prestito attivo per copia (indice univoco parziale, regge richieste simultanee), scadenza = inizio + durata, restituzione non anteriore all'inizio, la copia appartiene al libro, cancellazione di libri/copie con prestiti rifiutata (`ON DELETE RESTRICT`) → l'API risponde 409 `has_loans`.
+**API** (verifica ruolo lato server): admin = `POST /api/books/:id/loans`, `POST /api/loans/:id/return`, `PUT /api/loans/:id`, `GET /api/loans` (filtri destinatario/stato/date/libro); nessuna DELETE (405). Viewer = solo `GET /api/books/:id/loans`, **senza** nome, recapito e note (privacy); tutto il resto 403.
+**Interfaccia**: sezione «Prestiti» nella scheda del libro (registra, restituisci, storico con durata effettiva e ritardo), pagina «Prestiti» (solo admin, con filtri), voce di menu solo per admin.
+**Limiti noti**: data odierna calcolata nel fuso Europa/Zurigo; nessuna annullamento di una restituzione registrata per errore (da gestire con nuova migrazione/decisione); nessuna interfaccia per aggiungere altre copie; i prestiti non sono inclusi nel backup JSON/CSV (da decidere); nessun invio di promemoria.
+**Test automatici**: `server/loans.test.ts` (doppio prestito, richieste simultanee, date incoerenti, vincoli DB saltando l'API, restituzioni non valide, storico conservato, ruoli, privacy, client HTTP), caso con driver `pg` reale in `server/pgdriver.test.ts`, `src/test/loans.test.tsx` (interfaccia). Totale 267 test, `npm run build` OK.

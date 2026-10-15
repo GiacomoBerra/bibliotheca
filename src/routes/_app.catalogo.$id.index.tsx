@@ -2,6 +2,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FileCode2, Pencil, Trash2 } from "lucide-react";
+import { BookLoans } from "@/components/app/BookLoans";
 import { ErrorBox, IllustrativeNote, Loading, StatusPill } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,7 +30,7 @@ function Scheda() {
       {error ? <ErrorBox message={error} onRetry={reload} /> : loading && !b ? <Loading /> : !b ? (
         <div className="py-16 text-center">
           <h1 className="text-2xl font-semibold">Libro non trovato</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Nessuna tua scheda corrisponde a questo indirizzo: potrebbe essere stata cancellata.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Nessuna scheda corrisponde a questo indirizzo: potrebbe essere stata cancellata.</p>
           <Link to="/catalogo" className="mt-4 inline-block text-primary underline">Torna al catalogo</Link>
         </div>
       ) : <Dettaglio book={b} />}
@@ -101,6 +102,8 @@ function Dettaglio({ book: b }: { book: Book }) {
           ))}
         </dl>
       </section>
+
+      <BookLoans bookId={b.id} isAdmin={isAdmin} />
 
       <MarcView book={b} />
 

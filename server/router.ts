@@ -2,6 +2,8 @@ import { parseBookInput } from "../src/lib/api/parse";
 import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../src/lib/api/types";
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
+import * as loansRepo from "./loansRepo";
+import { parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso } from "../src/lib/api/loans";
 import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
@@ -21,6 +23,8 @@ export interface Deps {
   getPrincipal(req: Request): Promise<Principal | null>;
   /** Ricerca su fonti bibliografiche esterne (solo admin). Non scrive nel catalogo. */
   lookup?: Lookup;
+  /** Data odierna «AAAA-MM-GG» (fuso della biblioteca). Iniettabile nei test. */
+  today?(): string;
   log?(message: string): void;
 }
 
@@ -74,9 +78,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
-    const m = /^\/api\/(books|stats|export|lookup)(?:\/([^/]+))?$/.exec(path);
+    const m = /^\/api\/(books|stats|export|lookup|loans)(?:\/([^/]+)(?:\/(loans|return))?)?$/.exec(path);
     if (!m) return fail(404, "not_found", "Risorsa inesistente.");
-    const [, resource, id] = m as unknown as [string, string, string | undefined];
+    const [, resource, id, sub] = m as unknown as [string, string, string | undefined, "loans" | "return" | undefined];
+    if ((sub === "loans" && resource !== "books") || (sub === "return" && resource !== "loans")) return fail(404, "not_found", "Risorsa inesistente.");
 
     // 1. CSRF  2. Autenticazione  3. Ruolo (autorizzazione, PRIMA di qualsiasi accesso ai dati)  4. Database
     if (!csrfOk(req)) return fail(403, "csrf", "Richiesta non consentita da questo indirizzo.");
@@ -105,6 +110,59 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     }
     const db = deps.getDb();
     if (!db) return fail(503, "db_not_configured", "Il database di questo ambiente non è ancora stato creato o collegato (variabile NETLIFY_DB_URL assente).");
+
+    const today = deps.today?.() ?? todayIso();
+    const asLoanError = (e: unknown) => {
+      if (!(e instanceof loansRepo.LoanError)) return null;
+      return fail(e.status, e.code, e.message, e.fields);
+    };
+
+    // Prestiti. Gestione (registrare, restituire, correggere, elenco globale con nomi): solo admin.
+    // Il visualizzatore può solo leggere lo stato e lo storico di un libro, SENZA dati personali (nome, recapito, note).
+    if (resource === "books" && id && sub === "loans") {
+      if (req.method === "GET") {
+        const r = await loansRepo.listBookLoans(db, id, today, role !== "admin");
+        return r ? json(200, r) : fail(404, "not_found", "Scheda non trovata.");
+      }
+      if (req.method === "POST") {
+        const body = await readJson(req);
+        if (!body.ok) return body.res;
+        const parsed = parseLoanInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", "Alcuni campi del prestito non sono validi.", parsed.errors);
+        try { return json(201, await loansRepo.createLoan(db, userId, id, parsed.value, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      return fail(405, "method", "Metodo non consentito.");
+    }
+    if (resource === "loans") {
+      if (!id && !sub) {
+        if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");
+        return json(200, await loansRepo.listLoans(db, parseLoanListOptions(url.searchParams), today));
+      }
+      if (id && sub === "return") {
+        if (req.method !== "POST") return fail(405, "method", "Metodo non consentito.");
+        const body = await readJson(req);
+        if (!body.ok) return body.res;
+        const parsed = parseReturnInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", "La data di restituzione non è valida.", parsed.errors);
+        try { return json(200, await loansRepo.returnLoan(db, userId, id, parsed.value.returnedDate, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      if (id && !sub) {
+        if (req.method === "GET") {
+          const l = await loansRepo.getLoan(db, id, today);
+          return l ? json(200, l) : fail(404, "not_found", "Prestito non trovato.");
+        }
+        if (req.method === "PUT") {
+          const body = await readJson(req);
+          if (!body.ok) return body.res;
+          const parsed = parseLoanEdit(body.value);
+          if (!parsed.ok) return fail(400, "validation", "Alcuni campi del prestito non sono validi.", parsed.errors);
+          try { return json(200, await loansRepo.updateLoan(db, id, parsed.value, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+        }
+        // Nessuna cancellazione: lo storico dei prestiti si conserva sempre.
+        return fail(405, "method", "I prestiti non si cancellano: lo storico viene conservato.");
+      }
+      return fail(404, "not_found", "Risorsa inesistente.");
+    }
 
     if (resource === "stats" && !id) {
       return req.method === "GET" ? json(200, await repo.getStats(db)) : fail(405, "method", "Metodo non consentito.");
@@ -137,7 +195,13 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         return b ? json(200, b) : fail(404, "not_found", "La scheda non esiste più: nessuna modifica è stata salvata.");
       }
       if (req.method === "DELETE") {
-        return (await repo.deleteBook(db, id)) ? json(200, { deleted: true }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
+        try {
+          return (await repo.deleteBook(db, id)) ? json(200, { deleted: true }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
+        } catch (e) {
+          const c = (e as { code?: unknown } | null)?.code;
+          if (c === "23503" || c === "23001") return fail(409, "has_loans", "Questo libro ha uno storico di prestiti, che viene conservato: la scheda non può essere cancellata. Puoi segnarla come «da revisionare» o modificarla.");
+          throw e;
+        }
       }
       return fail(405, "method", "Metodo non consentito.");
     }

@@ -1,3 +1,4 @@
+import type { BookLoans, Loan, LoanEditInput, LoanInput, LoanListOptions, LoanPage } from "./loans";
 import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
 
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
@@ -83,6 +84,14 @@ export interface BooksApi {
   listAllBooks(): Promise<Book[]>;
   /** Cerca su fonti bibliografiche esterne (solo admin). Non modifica il catalogo. */
   lookupSources(query: LookupQuery, opts?: { refresh?: boolean }): Promise<LookupResponse>;
+  /** Disponibilità e storico prestiti di un libro. Per il visualizzatore nome, recapito e note sono assenti (null). */
+  listBookLoans(bookId: string): Promise<BookLoans>;
+  /** Elenco globale dei prestiti con filtri (solo admin). */
+  listLoans(options?: LoanListOptions): Promise<LoanPage>;
+  createLoan(bookId: string, input: LoanInput): Promise<Loan>;
+  /** `returnedDate` assente = oggi. Non cancella il prestito. */
+  returnLoan(loanId: string, returnedDate?: string): Promise<Loan>;
+  updateLoan(loanId: string, input: LoanEditInput): Promise<Loan>;
 }
 
 export function emptyBookInput(): BookInput {

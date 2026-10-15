@@ -47,6 +47,20 @@ describe("Driver pg di produzione su Postgres locale Netlify", () => {
     const fresh = api(makeDeps(mk()));
     expect((await fresh("GET", "/api/books?query=condiviso", { user: "u1" })).json.total).toBe(1);
   });
+  it("prestiti col driver reale: richieste davvero concorrenti → un solo prestito; storico conservato; viewer senza dati personali", async () => {
+    const b = await call("POST", "/api/books", { user: "u1", body: { title: "Libro prestiti pg" } });
+    const loanBody = (n: number) => ({ borrower: `Persona ${n}`, contact: "", notes: "", loanDate: "2026-10-01", plannedDays: 14 });
+    const rs = await Promise.all([1, 2, 3, 4, 5, 6].map((n) => api(makeDeps(mk(), { today: () => "2026-10-15" }))("POST", `/api/books/${b.json.id}/loans`, { user: "u1", body: loanBody(n) })));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(rs.filter((r) => r.status === 409)).toHaveLength(5);
+    const ok = rs.find((r) => r.status === 201)!;
+    expect((await call("POST", `/api/loans/${ok.json.id}/return`, { user: "u1", body: { returnedDate: "2026-10-05" } })).json).toMatchObject({ state: "restituito", effectiveDays: 4 });
+    expect((await call("DELETE", `/api/books/${b.json.id}`, { user: "u1" })).status).toBe(409);
+    const v = await call("GET", `/api/books/${b.json.id}/loans`, { user: "v1", roles: ["viewer"] });
+    expect(v.json.loans).toHaveLength(1);
+    expect(v.json.loans[0].borrower).toBeNull();
+    expect((await call("GET", "/api/loans", { user: "v1", roles: ["viewer"] })).status).toBe(403);
+  });
   it("le migrazioni sono state applicate dal motore di Netlify (schema atteso)", async () => {
     const client = new pg.Client({ connectionString });
     await client.connect();

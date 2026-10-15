@@ -1,4 +1,5 @@
 import { BooksApiError, mapHttpError, networkError } from "./errors";
+import type { BookLoans, Loan, LoanPage } from "./loans";
 import type { LookupResponse } from "@/lib/sources/types";
 import type { Book, BookInput, BookPage, BooksApi, CatalogStats, ListOptions } from "./types";
 
@@ -68,6 +69,16 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
       if (o.refresh) p.set("refresh", "1");
       return (await call("GET", `/api/lookup?${p.toString()}`)) as LookupResponse;
     },
+    listBookLoans: async (bookId) => (await call("GET", `/api/books/${encodeURIComponent(bookId)}/loans`)) as BookLoans,
+    listLoans: async (o = {}) => {
+      const p = new URLSearchParams();
+      for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== "" && !(k === "state" && v === "tutti")) p.set(k, String(v));
+      const s = p.toString();
+      return (await call("GET", `/api/loans${s ? `?${s}` : ""}`)) as LoanPage;
+    },
+    createLoan: async (bookId, input) => (await call("POST", `/api/books/${encodeURIComponent(bookId)}/loans`, input)) as Loan,
+    returnLoan: async (id, returnedDate) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/return`, returnedDate ? { returnedDate } : {})) as Loan,
+    updateLoan: async (id, input) => (await call("PUT", `/api/loans/${encodeURIComponent(id)}`, input)) as Loan,
   };
 }
 
