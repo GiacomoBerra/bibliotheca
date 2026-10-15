@@ -4,6 +4,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { createHttpBooksApi } from "../src/lib/api/httpBooksApi";
 import { emptyBookInput } from "../src/lib/api/types";
 import { handle } from "./router";
+import { createLookup } from "./sources/lookup";
 import { api, makeDeps, makeTestDb } from "./testHarness";
 import type { Db } from "./db";
 
@@ -280,5 +281,47 @@ describe("Persistenza dopo un nuovo accesso, con il client reale dell'app", () =
   it("errore di rete: messaggio chiaro", async () => {
     const c = createHttpBooksApi({ fetch: async () => { throw new TypeError("Failed to fetch"); } });
     await expect(c.createBook({ ...emptyBookInput(), title: "x" })).rejects.toMatchObject({ kind: "network", message: expect.stringContaining("non sono stati modificati") });
+  });
+});
+
+describe("/api/lookup: ricerca su fonti esterne, solo admin, senza scrivere nel catalogo", () => {
+  const fetchCalls: string[] = [];
+  const fake = (async (input: RequestInfo | URL) => {
+    fetchCalls.push(String(input));
+    const u = new URL(String(input));
+    return new Response(JSON.stringify(u.hostname === "openlibrary.org" ? { docs: [] } : { items: [{ id: "G1", volumeInfo: { title: "Libro esterno", authors: ["Anna Rossi"], publishedDate: "1999", industryIdentifiers: [{ type: "ISBN_13", identifier: "9780306406157" }] } }] }), { status: 200 });
+  }) as typeof fetch;
+  const lookupApi = () => api(makeDeps(db, { lookup: createLookup({ fetch: fake, sleep: async () => {}, limits: { perMinute: 3, perDay: 50 } }) }));
+
+  it("senza sessione 401, senza ruolo 403, viewer 403: nessuna chiamata verso le fonti", async () => {
+    const call2 = lookupApi();
+    const before = fetchCalls.length;
+    expect((await call2("GET", "/api/lookup?title=abc")).status).toBe(401);
+    expect((await call2("GET", "/api/lookup?title=abc", { user: "x", roles: [] })).status).toBe(403);
+    expect((await call2("GET", "/api/lookup?title=abc", { user: "v", roles: ["viewer"] })).status).toBe(403);
+    expect(fetchCalls.length).toBe(before);
+  });
+  it("admin: risultati con provenienza; il catalogo non cambia", async () => {
+    const call2 = lookupApi();
+    const n = (await raw.query("select count(*)::int as n from books")).rows[0];
+    const r = await call2("GET", "/api/lookup?isbn=978-0-306-40615-7", { user: "adm", roles: ["admin"] });
+    expect(r.status).toBe(200);
+    expect(r.json.groups[0]).toMatchObject({ match: "esatta" });
+    expect(r.json.groups[0].records[0]).toMatchObject({ source: "googlebooks", title: "Libro esterno" });
+    expect((await raw.query("select count(*)::int as n from books")).rows[0]).toEqual(n);
+    expect((await raw.query("select count(*)::int as n from books where title = 'Libro esterno'")).rows[0]).toEqual({ n: 0 });
+  });
+  it("parametri non validi → 400; metodi diversi da GET → 405/403; limite di frequenza → 429 con Retry-After", async () => {
+    const call2 = lookupApi();
+    expect((await call2("GET", "/api/lookup?isbn=12ab", { user: "adm2", roles: ["admin"] })).status).toBe(400);
+    expect((await call2("GET", "/api/lookup", { user: "adm2", roles: ["admin"] })).status).toBe(400);
+    expect((await call2("POST", "/api/lookup", { user: "adm2", roles: ["admin"], body: {} })).status).toBe(405);
+    for (let i = 0; i < 3; i++) await call2("GET", `/api/lookup?title=Libro%20numero%20${i}`, { user: "adm3", roles: ["admin"] });
+    const limited = await call2("GET", "/api/lookup?title=Libro%20ancora", { user: "adm3", roles: ["admin"] });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+  });
+  it("non configurata → 503 chiaro", async () => {
+    expect((await call("GET", "/api/lookup?title=abc", { user: "adm", roles: ["admin"] })).status).toBe(503);
   });
 });

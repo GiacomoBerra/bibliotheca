@@ -2,6 +2,7 @@ import type { Config } from "@netlify/functions";
 import { getUser } from "@netlify/identity";
 import { createPgDb, type Db } from "../../server/db";
 import { handle } from "../../server/router";
+import { createLookup } from "../../server/sources/lookup";
 
 /**
  * Unica Function dell'API di Bibliotheca. Identità e ruoli (admin / viewer, da `app_metadata.roles`) arrivano SOLO dalla sessione Netlify Identity verificata
@@ -17,8 +18,12 @@ function getDb(): Db | null {
   return db;
 }
 
+/** Ricerca su Open Library e Google Books: chiavi (se servono) solo dalle variabili d'ambiente del server. */
+const lookup = createLookup({ fetch: (...a) => fetch(...a), env: (k) => Netlify.env.get(k) });
+
 export default async (req: Request): Promise<Response> =>
   handle(req, {
+    lookup,
     getDb,
     getPrincipal: async () => {
       const user = await getUser();
@@ -28,5 +33,5 @@ export default async (req: Request): Promise<Response> =>
   });
 
 export const config: Config = {
-  path: ["/api/books", "/api/books/*", "/api/stats", "/api/export"],
+  path: ["/api/books", "/api/books/*", "/api/stats", "/api/export", "/api/lookup"],
 };

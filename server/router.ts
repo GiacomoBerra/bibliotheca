@@ -2,6 +2,7 @@ import { parseBookInput } from "../src/lib/api/parse";
 import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../src/lib/api/types";
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
+import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
 export type Role = "admin" | "viewer";
@@ -18,6 +19,8 @@ export interface Deps {
   getDb(): Db | null;
   /** Identità e ruoli VERIFICATI lato server (sessione Netlify Identity). Mai letti dal corpo o dai parametri della richiesta. */
   getPrincipal(req: Request): Promise<Principal | null>;
+  /** Ricerca su fonti bibliografiche esterne (solo admin). Non scrive nel catalogo. */
+  lookup?: Lookup;
   log?(message: string): void;
 }
 
@@ -71,7 +74,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
-    const m = /^\/api\/(books|stats|export)(?:\/([^/]+))?$/.exec(path);
+    const m = /^\/api\/(books|stats|export|lookup)(?:\/([^/]+))?$/.exec(path);
     if (!m) return fail(404, "not_found", "Risorsa inesistente.");
     const [, resource, id] = m as unknown as [string, string, string | undefined];
 
@@ -85,6 +88,21 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // Il visualizzatore può solo consultare (lettura di schede, elenco, statistiche): mai scrivere o esportare.
     const readOnlyAllowed = req.method === "GET" && (resource === "books" || resource === "stats");
     if (role === "viewer" && !readOnlyAllowed) return fail(403, "forbidden", "Il tuo ruolo (visualizzatore) consente solo di consultare il catalogo.");
+    if (resource === "lookup" && !id) {
+      if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");
+      if (!deps.lookup) return fail(503, "lookup_unavailable", "La ricerca su fonti esterne non è configurata per questo ambiente.");
+      try {
+        const q = parseLookupQuery(url.searchParams);
+        return json(200, await deps.lookup.run(q, userId, { refresh: url.searchParams.get("refresh") === "1" }));
+      } catch (e) {
+        if (e instanceof LookupError) {
+          const res = fail(e.status, e.code, e.message);
+          if (e.retryAfter) res.headers.set("retry-after", String(e.retryAfter));
+          return res;
+        }
+        throw e;
+      }
+    }
     const db = deps.getDb();
     if (!db) return fail(503, "db_unavailable", "Il database non è ancora configurato per questo ambiente.");
 
