@@ -58,7 +58,7 @@ function Catalogo() {
         description="Cerca per titolo, autore, ISBN, editore, soggetto, Dewey o collocazione."
         actions={<Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button>}
       />
-      <div className="mb-6 grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem_12rem_9rem]">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_11rem_12rem_9rem]">
         <div className="space-y-1.5">
           <Label htmlFor="cerca">Cerca nel catalogo</Label>
           <div className="relative">

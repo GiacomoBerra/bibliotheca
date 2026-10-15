@@ -6,8 +6,7 @@ Bibliotheca viene costruita da zero. Non esiste codice sorgente iniziale da pres
 ## Prima di intervenire
 - Leggi questo file e il README, poi verifica la struttura e la configurazione reali del repository.
 - Se il repository è vuoto, proponi una struttura minima coerente con lo stack scelto e documenta la decisione.
-- La persistenza online è un requisito già deciso. Prima scelta: Netlify Database (PostgreSQL) con Netlify Functions; prima della creazione, verifica costi e limiti aggiornati. Se non può restare a CHF/EUR 0, proponi Supabase Free come database/auth mantenendo Netlify per il sito.
-- Autenticazione e autorizzazioni server-side sono obbligatorie perché il catalogo è privato. Valuta Netlify Identity, incluso nei piani credit-based, e verifica sempre l'identità/ruolo nelle funzioni.
+- Persistenza e autenticazione: **Supabase Free** (PostgreSQL + Supabase Auth), scelta confermata dal proprietario; il sito resta su Netlify. L'autorizzazione è nelle policy RLS del database (`supabase/migrations`), non nell'interfaccia.
 - Non attivare piani a pagamento, auto-recharge o servizi con costi senza approvazione esplicita. Il piano Free Netlify ha un limite rigido di crediti e un'app può essere sospesa se la quota si esaurisce.
 - Non modificare o cancellare file fuori dall'ambito concordato.
 
@@ -30,8 +29,11 @@ Bibliotheca viene costruita da zero. Non esiste codice sorgente iniziale da pres
 Rispondi in italiano, con istruzioni pratiche. Distingui sempre proposto, implementato, testato e pubblicato. Se non puoi eseguire un controllo, dichiaralo.
 
 ## Note tecniche del repository
-- Stack: Vite + React 19 + TanStack Router (SPA), Tailwind v4. Nessun SSR.
-- Tutti i dati passano dall'interfaccia `BooksApi` in `src/lib/api`; i componenti non importano mai `src/data`.
-- Le azioni non implementate sono disattivate o aprono l'avviso "Funzione non ancora disponibile": mai simulare un successo.
+- Stack: Vite + React 19 + TanStack Router (SPA), Tailwind v4, `@supabase/supabase-js`. Nessun SSR.
+- Tutti i dati passano dall'interfaccia `BooksApi` (`src/lib/api`); l'unica implementazione è `supabaseBooksApi.ts`. Nei test si usa `src/test/memoryApi.ts`.
+- Nel browser solo `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`. Mai chiave secret/service_role. `.env*` è ignorato da git (vedi `.env.example`).
+- Il client non invia mai `user_id`: lo imposta il database (`default auth.uid()`); la RLS lo verifica.
+- Ogni modifica allo schema = nuova migrazione in `supabase/migrations` + aggiornamento di `docs/database.md` + test in `src/test/rls.test.ts`.
 - `src/routeTree.gen.ts` è generato da `vite build`/`vite dev`: non modificarlo a mano.
 - Prima di ogni commit: `npm run build` e `npm test`.
+- Documentazione: `docs/` (setup Supabase, schema, decisioni e test).
