@@ -50,9 +50,9 @@ function Didattica() {
       <section aria-labelledby="esercizi" className="mt-10">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <h2 id="esercizi" className="text-xl font-semibold">Esercizi</h2>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 text-sm">
             <label htmlFor="argomento">Argomento</label>
-            <select id="argomento" value={topic} onChange={(e) => setTopic(e.target.value as Topic | "tutti")} className="h-9 rounded-md border border-input bg-background px-3 text-base shadow-sm md:text-sm">
+            <select id="argomento" value={topic} onChange={(e) => setTopic(e.target.value as Topic | "tutti")} className="h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-3 text-base shadow-sm md:text-sm">
               <option value="tutti">Tutti</option>
               {(Object.keys(TOPIC_LABELS) as Topic[]).map((t) => <option key={t} value={t}>{TOPIC_LABELS[t]}</option>)}
             </select>
@@ -80,9 +80,9 @@ function FieldExplorer() {
   return (
     <section aria-labelledby="campi" className="rounded-lg border bg-card p-5">
       <h2 id="campi" className="mb-3 text-xl font-semibold">Esplora un campo MARC 21</h2>
-      <div className="mb-3 flex items-center gap-2 text-sm">
+      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <label htmlFor="campo-tag">Campo</label>
-        <select id="campo-tag" value={tag} onChange={(e) => setTag(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-base shadow-sm md:text-sm">
+        <select id="campo-tag" value={tag} onChange={(e) => setTag(e.target.value)} className="h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-3 text-base shadow-sm md:text-sm">
           {tags.map((t) => <option key={t} value={t}>{t} — {GLOSSARY[t]!.name}</option>)}
         </select>
       </div>

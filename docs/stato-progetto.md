@@ -24,7 +24,7 @@ Non sono test automatici né verifiche in produzione.
 - Persistenza dopo le operazioni e dopo il cambio di account: confermata.
 
 ## Test automatici (eseguiti da Claude Code, Postgres reale in locale)
-278 test (ruoli, 403, CRUD, errori database, fonti simulate, voce simulata, MARC, ripristino, prestiti, didattica), build e controllo dei tipi OK.
+288 test (ruoli, 403, CRUD, errori database, fonti simulate, voce simulata, MARC, ripristino, prestiti, didattica), build e controllo dei tipi OK.
 
 ## Produzione
 Nessuna verifica: nessuna pubblicazione effettuata.
@@ -52,3 +52,9 @@ Nessuna verifica: nessuna pubblicazione effettuata.
 **Onestà sui limiti**: dove la risposta dipende da regole locali o fonti assenti (forma del nome, articoli da ignorare, numero Dewey corretto, soggetti da thesauri) l'esercizio lo dichiara («Attenzione») e non fornisce risposte inventate; nessun numero Dewey né termine di soggetto ufficiale è presente nei contenuti. Il punteggio non è salvato.
 **Da fare/decidere**: far rivedere i testi didattici a un catalogatore (le regole MARC sono verificate sulla fonte LC, ma la scelta degli esempi è didattica); eventuali lezioni su ISBD/RDA/REICAT e sul thesaurus italiano (es. Nuovo soggettario) richiedono fonti che l'app non ha.
 **Test**: `src/test/didattica.test.tsx` (11 test: coerenza glossario↔regole, struttura degli esercizi, feedback, filtro, editor).
+| 7. Accessibilità e rifinitura | parzialmente verificata (automatica + controllo visivo locale) | vedi sotto |
+
+## Fase 7 — Accessibilità e responsive
+**Automatico** (`src/test/a11y.test.tsx`, axe-core in jsdom): 9 schermate (admin e viewer) senza violazioni su nomi accessibili, etichette, ruoli ARIA, tabelle, struttura. Non copre contrasto dei colori, ordine visivo né screen reader reali.
+**Controllo visivo locale** (Chromium headless su una pagina di prova temporanea con dati finti, NON sulla Deploy Preview e non con Netlify Identity reale; pagina rimossa): dashboard, catalogo, scheda (admin e viewer), prestiti, didattica, nuova scheda a 375, 768 e 1280 px. Trovato e corretto un overflow orizzontale nella pagina didattica (menu a tendina con voci lunghe); poi nessun overflow orizzontale della pagina; le tabelle larghe scorrono nel proprio contenitore.
+**Da verificare a mano** su Deploy Preview: contrasto colori, uso da tastiera, dispositivi reali, dettatura vocale, fonti bibliografiche reali, prestiti con database Netlify.
