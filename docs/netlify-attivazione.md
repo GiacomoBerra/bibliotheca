@@ -2,9 +2,9 @@
 
 Stato: nulla di questo è ancora stato eseguito. Ogni passaggio è a cura del proprietario (dashboard Netlify).
 
-## 1. Collegare il repository (Deploy Preview)
-Netlify → progetto → **Project configuration > Build & deploy > Continuous deployment**: repository GitHub `bibliotheca`, branch di produzione `main`, **Deploy Previews: attive**. Build: `npm run build`, publish: `dist`.
-Non pubblicare in produzione senza conferma esplicita.
+## 1. Sito e Deploy Preview
+Il sito Netlify `bibliotheca-sbt` esiste già (https://app.netlify.com/projects/bibliotheca-sbt). Se non sai se è collegato a GitHub: apri **Deploys**; se vedi deploy con il nome di un branch o «Deploy Preview #N» lo è. Altrimenti cerca **Project configuration** (menu a sinistra del sito) e la voce di collegamento al repository `GiacomoBerra/bibliotheca`; le etichette possono cambiare con l'interfaccia di Netlify.
+Una Deploy Preview nasce aprendo una pull request su GitHub (non unirla a `main`). Le anteprime sono protette dal login Netlify del tuo team. Non pubblicare in produzione senza conferma esplicita.
 
 ## 2. Netlify Identity
 1. **Project configuration > Identity > Enable Identity**.
