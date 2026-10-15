@@ -2,7 +2,7 @@ import type { MarcField } from "../api/types";
 import { isDataField, type MarcIssue } from "./structure";
 
 /**
- * Regole del formato MARC 21 per un ELENCO LIMITATO di campi, verificate sulle pagine ufficiali della Library of Congress
+ * Regole del formato MARC 21 per un ELENCO LIMITATO di 9 campi (020, 082, 100, 245, 264, 300, 650, 653, 700), verificate sulle pagine ufficiali della Library of Congress
  * (https://www.loc.gov/marc/bibliographic/bdNNN.html) consultate il 15 ottobre 2026. Per qualsiasi altro campo l'app
  * NON conosce ripetibilità, indicatori e sottocampi ammessi: non li controlla e non li inventa.
  * Superare questi controlli NON significa che la catalogazione sia corretta.
@@ -26,6 +26,8 @@ export const RULES: Record<string, FieldRule> = {
   "264": { label: "Produzione, pubblicazione, distribuzione", url: U("264"), repeatable: true, ind1: [" ", "2", "3"], ind2: ["0", "1", "2", "3", "4"], subfields: { a: true, b: true, c: true } },
   "300": { label: "Descrizione fisica", url: U("300"), repeatable: true, ind1: [" "], ind2: [" "], subfields: { a: true, b: false, c: true, e: false } },
   "653": { label: "Termine d'indice non controllato", url: U("653"), repeatable: true, ind1: [" ", "0", "1", "2"], ind2: [" ", "0", "1", "2", "3", "4", "5", "6"], subfields: { a: true } },
+  "082": { label: "Classificazione Decimale Dewey", url: U("082"), repeatable: true, ind1: ["0", "1", "7"], ind2: [" ", "0", "4"], subfields: { a: true, "2": false, b: false, q: false } },
+  "650": { label: "Accesso per soggetto – termine tematico", url: U("650"), repeatable: true, ind1: [" ", "0", "1", "2"], ind2: ["0", "1", "2", "3", "4", "5", "6", "7"], subfields: { a: false, "2": false, x: true, y: true, z: true } },
   "700": { label: "Accesso aggiuntivo – nome di persona", url: U("700"), repeatable: true, ind1: ["0", "1", "3"], ind2: [" ", "2"], subfields: { a: false } },
 };
 

@@ -4,7 +4,10 @@
 
 - Record = leader (24 caratteri) + elenco ordinato di campi. Campi di controllo (001–009: solo valore) e campi dati (010–999: 2 indicatori, sottocampi ordinati e ripetibili). Ordine, ripetizioni, indicatori e sottocampi sono salvati così come inseriti (`jsonb` ordinato).
 - **Validità strutturale** (`src/lib/marc/structure.ts`): imposta anche dal server a ogni scrittura (HTTP 400 con messaggio). Non è correttezza catalografica.
-- **Regole di formato verificate** (`src/lib/marc/rules.ts`) solo per 020, 100, 245, 264, 300, 653, 700 su https://www.loc.gov/marc/bibliographic/bdNNN.html, consultate il 15/10/2026: ripetibilità, indicatori, ripetibilità dei sottocampi. Violazioni = avviso, non blocco. Per ogni altro campo nessuna regola è inventata.
+- **Regole di formato verificate** (`src/lib/marc/rules.ts`) solo per 020, 082, 100, 245, 264, 300, 650, 653, 700 (082 e 650 aggiunti nella fase 6) su https://www.loc.gov/marc/bibliographic/bdNNN.html, consultate il 15/10/2026: ripetibilità, indicatori, ripetibilità dei sottocampi. Violazioni = avviso, non blocco. Per ogni altro campo nessuna regola è inventata.
 - **Collegamento ai dati generali** (`src/lib/marc/fromBook.ts`): esplicito, in un solo verso, con anteprima e conferma; genera solo i 7 tag sopra. Indicatori non deducibili (245 ind. 1/2, 100/700 ind. 1 senza «Cognome, Nome») sono impostati in modo provvisorio e segnalati. Nessuna punteggiatura ISBD, nessuna inversione dei nomi. Il confronto dati generali ↔ MARC segnala incoerenze senza correggerle.
 - Il leader iniziale proposto è un modello da controllare.
 - La vista testuale (`=245  10$a…`) non è ISO 2709 né MARCXML.
+
+## Glossario didattico (fase 6)
+`src/lib/marc/glossary.ts` spiega nome, ripetibilità, significato degli indicatori e dei sottocampi per gli stessi 9 campi di `rules.ts`, con fonte e data (15/10/2026). Un test automatico (`src/test/didattica.test.tsx`) verifica che glossario e regole di controllo non divergano. Il glossario è usato dalla pagina «Modalità didattica» e dalla spiegazione contestuale nell'editor MARC (per i campi non documentati l'app non mostra spiegazioni). Le «note didattiche» sono commenti non normativi, marcati come tali.

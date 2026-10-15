@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { IllustrativeNote } from "@/components/app/common";
 import { checkStructure, isControlTag, isDataField, toReadableText, LEADER_LENGTH } from "@/lib/marc/structure";
 import { checkKnownRules, RULES } from "@/lib/marc/rules";
+import { GLOSSARY } from "@/lib/marc/glossary";
 import { compareWithGeneral, generateFromGeneral, mergeGenerated } from "@/lib/marc/fromBook";
 import type { BookInput, MarcField } from "@/lib/api/types";
 
@@ -113,6 +114,7 @@ export function MarcEditor({ leader, fields, book, onChange }: Props) {
                 <Button type="button" size="sm" variant="outline" onClick={() => upd(i, { ...f, subfields: [...f.subfields, { code: "a", value: "" }] })}><Plus aria-hidden /> Aggiungi sottocampo al campo {i + 1}</Button>
               </div>
             )}
+            <FieldHelpBox field={f} index={i} />
           </li>
         ))}
       </ol>
@@ -170,5 +172,35 @@ export function MarcEditor({ leader, fields, book, onChange }: Props) {
         <p className="text-xs text-muted-foreground">Rappresentazione testuale a scopo di lettura: non è un file ISO 2709 né MARCXML.</p>
       </details>
     </section>
+  );
+}
+
+/** Spiegazione contestuale del campo (solo per i campi documentati nel glossario, dalle pagine MARC 21 della LC). */
+function FieldHelpBox({ field, index }: { field: MarcField; index: number }) {
+  const g = GLOSSARY[field.tag];
+  if (!g) return null;
+  const d = isDataField(field) ? field : null;
+  const meaning = (x: { values: Record<string, string> }, v: string) => (x.values[v] ?? (v >= "1" && v <= "9" ? x.values["1–9"] : undefined));
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer text-primary">Che cos'è il campo {g.tag}? (spiegazione didattica)</summary>
+      <div className="mt-2 space-y-1 rounded bg-muted/50 p-3" aria-label={`Spiegazione del campo ${index + 1}`}>
+        <p><strong>{g.tag} {g.name}</strong>: {g.repeatable ? "ripetibile" : "non ripetibile"}.</p>
+        {d && (
+          <>
+            <p>Indicatore 1 ({g.ind1.meaning}): {meaning(g.ind1, d.ind1) ?? <em>valore non previsto dalla documentazione consultata</em>}.</p>
+            <p>Indicatore 2 ({g.ind2.meaning}): {meaning(g.ind2, d.ind2) ?? <em>valore non previsto dalla documentazione consultata</em>}.</p>
+            <ul className="list-inside list-disc">
+              {d.subfields.map((s, j) => {
+                const sf = g.subfields.find((x) => x.code === s.code);
+                return <li key={j}><code className="font-mono">${s.code}</code>: {sf ? `${sf.name} (${sf.repeatable ? "ripetibile" : "non ripetibile"})` : "non descritto qui: consulta la documentazione"}</li>;
+              })}
+            </ul>
+          </>
+        )}
+        {g.note && <p className="text-muted-foreground">Nota didattica: {g.note}</p>}
+        <a href={g.url} target="_blank" rel="noreferrer" className="text-primary underline">Fonte ufficiale (LC, consultata il 15/10/2026)</a>
+      </div>
+    </details>
   );
 }
