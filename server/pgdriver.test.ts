@@ -15,7 +15,7 @@ let ndb: NetlifyDB; let call: ReturnType<typeof api>; let connectionString = "";
 beforeAll(async () => {
   ndb = new NetlifyDB();
   connectionString = await ndb.start();
-  await ndb.applyMigrations("./db/migrations");
+  await ndb.applyMigrations("./netlify/database/migrations");
   call = api(makeDeps(mk()));
 }, 60_000);
 afterAll(async () => { await Promise.all(pools.map((p) => p.close?.())); await ndb.stop(); });

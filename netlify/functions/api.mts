@@ -1,4 +1,5 @@
 import type { Config } from "@netlify/functions";
+import { getConnectionString } from "@netlify/database";
 import { getUser } from "@netlify/identity";
 import { createPgDb, type Db } from "../../server/db";
 import { handle } from "../../server/router";
@@ -12,7 +13,14 @@ import { createLookup } from "../../server/sources/lookup";
 let db: Db | null | undefined;
 function getDb(): Db | null {
   if (db === undefined) {
-    const url = Netlify.env.get("NETLIFY_DB_URL");
+    let url = Netlify.env.get("NETLIFY_DB_URL");
+    if (!url) {
+      try {
+        url = getConnectionString(); // ambiente Netlify Database (branch corretto per questo deploy)
+      } catch {
+        url = undefined; // database non collegato: l'API risponde 503 db_not_configured
+      }
+    }
     db = url ? createPgDb(url) : null;
   }
   return db;

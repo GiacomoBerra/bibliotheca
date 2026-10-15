@@ -13,7 +13,7 @@ Architettura definitiva (decisione del proprietario): **solo Netlify** — Hosti
 | D6 | Tabella `books` con colonne semplici + `marc_fields` (jsonb ordinato) | Schede incomplete e MARC ordinato/ripetibile |
 | D7 | Solo il titolo è obbligatorio | Supporto ai record incompleti |
 | D8 | Nessuna mappatura automatica campi semplici ↔ MARC | Non inventare regole MARC21 |
-| D9 | **Database di produzione NON creato**: migrazioni in `db/migrations`, `@netlify/database` non installato | Costo dello storage non verificabile (non pubblicato dopo il 1 luglio 2026); evita provisioning automatico al deploy |
+| D9 | Database Netlify creato dal proprietario (15 ott 2026); `@netlify/database` installato, migrazioni in `netlify/database/migrations` | Costi accettati dal proprietario; verifica su Deploy Preview prima del merge |
 | D10 | Test del DB con Postgres reale (PGlite e `@netlify/database-dev` con il driver `pg` di produzione) | Niente backend simulato come unica prova |
 
 | D11 | Ricerca su fonti esterne solo dal server (`/api/lookup`, solo admin), connettori indipendenti, cache e limiti | Nessuna chiave nel browser; consumi contenuti; vedi `docs/ricerca-bibliografica.md` |

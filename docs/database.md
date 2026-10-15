@@ -1,7 +1,7 @@
 # Schema del database
 
 Stato: **implementata** e **testata** su Postgres locale (PGlite e motore locale di Netlify via driver `pg`). **Non applicata a nessun database Netlify.**
-Fonte: `db/migrations/20261016000001_books.sql` (fuori da `netlify/database/migrations` finché i costi non sono approvati).
+Fonte: `netlify/database/migrations/20261016000001_books.sql` (fuori da `netlify/database/migrations` finché i costi non sono approvati).
 
 ## Tabella `books`
 | Colonna | Tipo | Note |

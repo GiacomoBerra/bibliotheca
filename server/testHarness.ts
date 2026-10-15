@@ -6,7 +6,7 @@ import { handle, type Deps } from "./router";
 /** Postgres reale (PGlite) con la migrazione vera, esposto come `Db`. */
 export async function makeTestDb(): Promise<{ db: Db; raw: PGlite }> {
   const raw = new PGlite();
-  await raw.exec(readFileSync("db/migrations/20261016000001_books.sql", "utf8"));
+  await raw.exec(readFileSync("netlify/database/migrations/20261016000001_books.sql", "utf8"));
   const db: Db = {
     async query<T>(text: string, params: unknown[] = []) {
       const r = await raw.query<T>(text, params);

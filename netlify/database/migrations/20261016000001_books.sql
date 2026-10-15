@@ -1,8 +1,5 @@
 -- Bibliotheca — migrazione 0001 (Postgres / Netlify Database): tabella `books`.
--- Stato: implementata e testata su Postgres locale. NON applicata a nessun database Netlify.
--- Si trova in `db/migrations` (e non in `netlify/database/migrations`) di proposito: Netlify applica
--- e PROVVEDE il database da solo se trova quella cartella. Si sposta lì solo dopo approvazione dei costi
--- (vedi docs/netlify-attivazione.md).
+-- Stato: implementata e testata su Postgres locale; applicata da Netlify al deploy.
 --
 -- Sicurezza: il browser non si collega mai al database. Solo le Netlify Functions lo interrogano.
 -- Il catalogo è UNICO e condiviso: l'accesso dipende dal ruolo (admin / viewer) verificato lato server.
