@@ -23,6 +23,9 @@ export function mapHttpError(status: number, body: unknown): BooksApiError {
     return new BooksApiError("validation", detail || err.message || "Alcuni campi non sono validi.");
   }
   if (status === 404) return new BooksApiError("notfound", err.message ?? "Elemento non trovato.");
+  if (status === 503 && err.code === "db_not_configured") return new BooksApiError("unavailable", "Il database online non è ancora stato creato per questo ambiente. Il catalogo non può salvare né mostrare schede finché il proprietario non lo attiva (vedi docs/netlify-attivazione.md).");
+  if (status === 503 && err.code === "db_schema_missing") return new BooksApiError("unavailable", "Il database esiste ma le sue tabelle non sono state create (migrazione non applicata). Il proprietario deve ripubblicare l'ambiente.");
+  if (status === 503 && err.code === "db_unreachable") return new BooksApiError("unavailable", "Il database non risponde in questo momento. Riprova tra un minuto: i dati non sono stati modificati.");
   if (status === 503) return new BooksApiError("unavailable", "Il database non è ancora disponibile per questo ambiente. Riprova più tardi o contatta il proprietario del catalogo.");
   if (status === 413) return new BooksApiError("validation", "I dati inviati sono troppo grandi.");
   return new BooksApiError("unknown", "Operazione non riuscita. Riprova tra poco; se il problema continua, contatta il proprietario del catalogo.");

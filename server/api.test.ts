@@ -223,7 +223,19 @@ describe("Protezione CSRF, metodi, risposte", () => {
   it("database non configurato: 401 senza sessione, 503 con sessione (mai dati)", async () => {
     const noDb = api(makeDeps(null));
     expect((await noDb("GET", "/api/books")).status).toBe(401);
-    expect((await noDb("GET", "/api/books", { user: A })).status).toBe(503);
+    const r = await noDb("GET", "/api/books", { user: A });
+    expect(r.status).toBe(503);
+    expect(r.json.error.code).toBe("db_not_configured");
+  });
+  it("errori del database classificati senza esporne i dettagli", async () => {
+    const cases: [string, string][] = [["42P01", "db_schema_missing"], ["ECONNREFUSED", "db_unreachable"], ["28P01", "db_unreachable"]];
+    for (const [code, expected] of cases) {
+      const broken = { async query() { throw Object.assign(new Error("postgres://u:segreta@host/db"), { code }); } };
+      const r = await api(makeDeps(broken as unknown as Db))("GET", "/api/books", { user: A });
+      expect(r.status).toBe(503);
+      expect(r.json.error.code).toBe(expected);
+      expect(JSON.stringify(r.json)).not.toMatch(/segreta|postgres:/);
+    }
   });
   it("errori interni: risposta generica senza dettagli, loggata senza dati dell'utente", async () => {
     const logs: string[] = [];

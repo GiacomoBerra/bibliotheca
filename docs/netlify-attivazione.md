@@ -34,3 +34,16 @@ Pubblica prima una **Deploy Preview**: Netlify crea un branch del database con u
 
 ## 5. Backup
 Esporta il catalogo (Impostazioni) con regolarità. Snapshot Netlify Database: verifica disponibilità e costi nel dashboard prima di contarci.
+
+## Errore «database non disponibile» (15 ott 2026)
+
+**Causa verificata:** il database Netlify non è mai stato creato (volutamente, in attesa della verifica dei costi). Senza `@netlify/database` e senza migrazioni in `netlify/database/migrations`, Netlify non crea il database e `NETLIFY_DB_URL` non esiste: l'API risponde 503 e l'interfaccia mostrava un messaggio generico.
+
+**Messaggi ora distinti** (nessun dettaglio sensibile esposto):
+- `db_not_configured` – database non creato/collegato;
+- `db_schema_missing` – database presente ma migrazione non applicata (errore Postgres 42P01);
+- `db_unreachable` – database non raggiungibile/in risveglio.
+
+**Costi (da docs.netlify.com, Billing and usage, letto il 15 ott 2026):** solo piani a crediti; 10 crediti per unità di compute-ora, 20 crediti/GB in uscita; storage gratuito "fino al 1 luglio 2026", prezzo successivo non pubblicato; piano Free: 1 compute unit, 48 unit-ore, 5 GB storage/scritture/banda per periodo, 3 database, sleep dopo 5 min. Con il tetto di 300 crediti/mese i 48 unit-ore (=480 crediti) non sono raggiungibili: il limite reale è il tetto crediti. Il dashboard (Team > Billing) va controllato dal proprietario prima dell'attivazione.
+
+**Attivazione (solo dopo approvazione costi, prima su Deploy Preview):** `npm i @netlify/database`, `git mv db/migrations netlify/database/migrations`, push del branch, verifica del preview, poi merge.

@@ -69,6 +69,9 @@ describe("errori", () => {
     expect(mapHttpError(404, { error: { message: "Scheda non trovata." } })).toMatchObject({ kind: "notfound", message: "Scheda non trovata." });
     expect(mapHttpError(400, { error: { code: "validation", fields: { title: "Il titolo è obbligatorio." } } })).toMatchObject({ kind: "validation", message: "Il titolo è obbligatorio." });
     expect(mapHttpError(503, {}).kind).toBe("unavailable");
+    expect(mapHttpError(503, { error: { code: "db_not_configured" } }).message).toMatch(/non è ancora stato creato/);
+    expect(mapHttpError(503, { error: { code: "db_schema_missing" } }).message).toMatch(/migrazione/);
+    expect(mapHttpError(503, { error: { code: "db_unreachable" } }).message).toMatch(/non risponde/);
     expect(mapHttpError(500, { error: { message: "relation \"books\" secret detail" } }).message).not.toMatch(/relation|secret/);
   });
 });

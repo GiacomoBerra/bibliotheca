@@ -104,7 +104,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
     }
     const db = deps.getDb();
-    if (!db) return fail(503, "db_unavailable", "Il database non è ancora configurato per questo ambiente.");
+    if (!db) return fail(503, "db_not_configured", "Il database di questo ambiente non è ancora stato creato o collegato (variabile NETLIFY_DB_URL assente).");
 
     if (resource === "stats" && !id) {
       return req.method === "GET" ? json(200, await repo.getStats(db)) : fail(405, "method", "Metodo non consentito.");
@@ -143,8 +143,21 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     }
     return fail(404, "not_found", "Risorsa inesistente.");
   } catch (e) {
-    // Log senza dati dell'utente né query; risposta generica.
-    deps.log?.(`api error: ${e instanceof Error ? e.name + ": " + e.message : "unknown"}`);
+    // Log senza dati dell'utente né query (solo nome/codice dell'errore); risposta senza dettagli sensibili.
+    const code = (e as { code?: unknown } | null)?.code;
+    deps.log?.(`api error: ${e instanceof Error ? e.name : "unknown"}${typeof code === "string" ? " [" + code + "]" : ""}`);
+    const kind = classifyDbError(e);
+    if (kind === "schema") return fail(503, "db_schema_missing", "Il database esiste ma le tabelle non sono state create: la migrazione non è stata applicata a questo ambiente.");
+    if (kind === "unreachable") return fail(503, "db_unreachable", "Il database è configurato ma non risponde. Riprova tra un minuto: se è in pausa si riattiva da solo.");
     return fail(500, "server_error", "Errore interno del server. Riprova tra poco; i dati non sono stati modificati se l'operazione non è confermata.");
   }
+}
+
+/** Classifica un errore del driver senza esporne il messaggio (può contenere host o credenziali). */
+export function classifyDbError(e: unknown): "schema" | "unreachable" | null {
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code !== "string") return null;
+  if (code === "42P01" || code === "3F000") return "schema";
+  if (["ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "ECONNRESET", "EAI_AGAIN", "28P01", "28000", "57P03", "53300"].includes(code) || code.startsWith("08")) return "unreachable";
+  return null;
 }
