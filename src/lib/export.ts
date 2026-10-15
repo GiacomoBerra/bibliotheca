@@ -1,4 +1,5 @@
 import type { Book } from "./api/types";
+import { toReadableText } from "./marc/structure";
 
 export const BACKUP_FORMAT = "bibliotheca-backup";
 export const BACKUP_VERSION = 1;
@@ -37,6 +38,16 @@ export function booksToCsv(books: Book[]): string {
   const head = CSV_COLUMNS.map(([h]) => h).join(",");
   const rows = books.map((b) => CSV_COLUMNS.map(([, f]) => csvCell(f(b))).join(","));
   return "﻿" + [head, ...rows].join("\r\n") + "\r\n";
+}
+
+/**
+ * Elenco testuale dei record MARC21 delle schede che ne hanno uno (rappresentazione leggibile «=245  10$a…»).
+ * NON è ISO 2709 né MARCXML e non è importabile in altri sistemi come file MARC.
+ */
+export function booksToMarcText(books: Book[]): { text: string; count: number } {
+  const withMarc = books.filter((b) => b.marcFields && b.marcFields.length > 0);
+  const text = withMarc.map((b) => `# ${b.title} [${b.id}]\n${toReadableText(b.marcLeader, b.marcFields)}`).join("\n\n") + (withMarc.length ? "\n" : "");
+  return { text, count: withMarc.length };
 }
 
 export function downloadText(filename: string, content: string, mime: string): void {

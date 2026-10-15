@@ -43,3 +43,6 @@ Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa 
 - il corpo della richiesta non può impostare `created_by` / `updated_by` né alcun ruolo (campi sconosciuti ignorati);
 - SQL sempre parametrizzato; ORDER BY da whitelist; `%` e `_` della ricerca sono letterali;
 - limiti di lunghezza anche nel database (CHECK).
+
+## Backup e ripristino (fase 4)
+Il JSON esportato (`format: bibliotheca-backup`, `version: 1`) contiene tutte le schede con tutti i campi, compresi MARC21 (ordine, ripetizioni, indicatori, sottocampi), soggetti e dati Dewey. Il ripristino (`src/lib/backup.ts`) valida ogni scheda con la stessa funzione del server, mostra anteprima e conflitti (stesso id, stesso ISBN, stesso titolo+primo autore, duplicati nel file), richiede conferma esplicita e **non cancella mai**: crea schede nuove o, per scelta dell'admin, aggiorna quelle esistenti. Scrive con le API normali (admin lato server). Le esportazioni CSV e MARC testuale non sono formati di interscambio MARC (non ISO 2709). Un ripristino non reimposta id né date originali delle schede create.
