@@ -17,34 +17,14 @@ Stati: proposta / implementata / testata / pubblicata. «Preview» = verificato 
 ## Da sviluppare
 Esportazione/importazione JSON-CSV con validazione e backup (proposta), mappatura e validazione MARC21 con fonti autorevoli, soggettazione e Dewey didattici, funzioni di apprendimento, test di ripristino, accessibilità/responsive da verificare, gestione inviti/ruoli documentata, pubblicazione in produzione dopo conferma.
 
-## Verifiche sulla Deploy Preview PR #3 (eseguite dal proprietario)
-| Verifica | Esito | Eseguita da |
-|---|---|---|
-| Admin inserisce un libro; viewer lo vede dopo il cambio account | superata | proprietario |
-| Viewer: POST/PUT/DELETE/export su preview → 403 (4 risposte) | superata | proprietario |
-| Admin: POST 201; PUT e DELETE su UUID inesistente 404; export 200 | superata | proprietario |
-| Admin: PUT e DELETE su record di prova esistente, poi sparizione dal catalogo | DA ESEGUIRE (script sotto) | — |
-| Viewer: 403 su PUT/DELETE del record di prova esistente | DA ESEGUIRE | — |
+## Verifiche sulla Deploy Preview PR #3 — eseguite manualmente dal proprietario (15 ott 2026)
+Non sono test automatici né verifiche in produzione.
+- Admin: inserimento di un libro; modifica e cancellazione di un record di prova esistente; POST 201; PUT/DELETE su UUID inesistente 404; export 200.
+- Viewer: vede lo stesso catalogo dell'admin; POST/PUT/DELETE/export rifiutati con 403; il record resta intatto.
+- Persistenza dopo le operazioni e dopo il cambio di account: confermata.
 
-Script (console del browser, sulla preview). Passo 1 – admin: crea e modifica il record di prova, stampa l'id.
-```js
-const H={"content-type":"application/json","x-bibliotheca":"1"},f=(m,u,b)=>fetch(u,{method:m,credentials:"same-origin",headers:H,body:b?JSON.stringify(b):undefined});
-const c=await f("POST","/api/books",{title:"TEST-CANCELLABILE "+Date.now()});const id=(await c.json()).id;
-console.log("POST",c.status,"id",id);
-console.log("PUT",(await f("PUT","/api/books/"+id,{title:"TEST-CANCELLABILE modificato"})).status);
-console.log("GET",(await f("GET","/api/books/"+id)).status);
-```
-Passo 2 – viewer (sostituisci ID): GET atteso 200; PUT, DELETE → 403.
-```js
-const id="ID";const H={"content-type":"application/json","x-bibliotheca":"1"},f=(m,u,b)=>fetch(u,{method:m,credentials:"same-origin",headers:H,body:b?JSON.stringify(b):undefined});
-console.log("GET",(await f("GET","/api/books/"+id)).status);
-console.log("PUT",(await f("PUT","/api/books/"+id,{title:"x"})).status);
-console.log("DELETE",(await f("DELETE","/api/books/"+id)).status);
-```
-Passo 3 – admin (stesso ID): DELETE atteso 200, poi GET 404 e ricerca senza risultati.
-```js
-const id="ID";const H={"content-type":"application/json","x-bibliotheca":"1"},f=(m,u,b)=>fetch(u,{method:m,credentials:"same-origin",headers:H,body:b?JSON.stringify(b):undefined});
-console.log("DELETE",(await f("DELETE","/api/books/"+id)).status);
-console.log("GET",(await f("GET","/api/books/"+id)).status);
-console.log("cerca",(await (await f("GET","/api/books?query=TEST-CANCELLABILE")).json()).total);
-```
+## Test automatici (eseguiti da Claude Code, Postgres reale in locale)
+193 test (ruoli, 403, CRUD, errori database, fonti simulate, voce simulata), build e controllo dei tipi OK.
+
+## Produzione
+Nessuna verifica: nessuna pubblicazione effettuata.
