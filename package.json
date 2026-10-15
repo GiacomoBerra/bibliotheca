@@ -16,20 +16,23 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@netlify/functions": "^6.0.2",
+    "@netlify/identity": "^2.0.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-slot": "^1.2.4",
-    "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-router": "1.170.41",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.575.0",
+    "pg": "^8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
+    "@netlify/database-dev": "^1.0.1",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/router-plugin": "1.168.42",
     "@testing-library/dom": "^10.4.0",
@@ -37,6 +40,7 @@
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.6.8",
     "@types/node": "^22.16.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
