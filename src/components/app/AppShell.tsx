@@ -1,6 +1,7 @@
 import { Link, Outlet } from "@tanstack/react-router";
 import { BookOpen, GraduationCap, LayoutDashboard, Library, LogOut, Settings } from "lucide-react";
-import { DemoBadge, UnavailableProvider } from "./common";
+import { UnavailableProvider } from "./common";
+import { useAuth } from "@/lib/auth/AuthProvider";
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -10,6 +11,7 @@ const nav = [
 ] as const;
 
 export function AppShell() {
+  const { user, signOut } = useAuth();
   return (
     <UnavailableProvider>
       <a href="#contenuto" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-card focus:px-3 focus:py-2">
@@ -37,17 +39,14 @@ export function AppShell() {
               ))}
             </ul>
           </nav>
-          <div className="hidden border-t border-sidebar-border px-5 py-4 md:block">
-            <Link to="/" className="flex items-center gap-2 text-sm text-sidebar-foreground/80 hover:text-sidebar-foreground">
-              <LogOut className="h-4 w-4" aria-hidden /> Esci dalla demo
-            </Link>
+          <div className="border-t border-sidebar-border px-5 py-3 text-sm">
+            <p className="truncate text-sidebar-foreground/70" title={user?.email ?? ""}>{user?.email}</p>
+            <button type="button" onClick={() => void signOut()} className="mt-1 flex items-center gap-2 text-sidebar-foreground/80 hover:text-sidebar-foreground">
+              <LogOut className="h-4 w-4" aria-hidden /> Esci
+            </button>
           </div>
         </aside>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3 border-b bg-card px-4 py-2 text-sm md:px-8">
-            <span className="text-muted-foreground">Ambiente dimostrativo — nessun dato viene salvato.</span>
-            <DemoBadge />
-          </div>
           <main id="contenuto" className="mx-auto max-w-6xl px-4 py-8 md:px-8">
             <Outlet />
           </main>

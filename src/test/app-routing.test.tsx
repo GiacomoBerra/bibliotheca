@@ -10,7 +10,7 @@ function matchedIds(path: string) {
 }
 
 describe("Routing dell'applicazione", () => {
-  it.each(["/", "/dashboard", "/catalogo", "/catalogo/3", "/didattica", "/impostazioni"])(
+  it.each(["/", "/recupera-password", "/reimposta-password", "/dashboard", "/catalogo", "/catalogo/3", "/didattica", "/impostazioni"])(
     "%s corrisponde a una pagina reale",
     (path) => {
       expect(matchedIds(path).at(-1)).not.toBe(rootRouteId);

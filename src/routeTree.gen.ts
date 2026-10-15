@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as RecuperaPasswordRouteImport } from './routes/recupera-password'
+import { Route as ReimpostaPasswordRouteImport } from './routes/reimposta-password'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppDidatticaRouteImport } from './routes/_app.didattica'
 import { Route as AppImpostazioniRouteImport } from './routes/_app.impostazioni'
@@ -24,6 +26,16 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecuperaPasswordRoute = RecuperaPasswordRouteImport.update({
+  id: '/recupera-password',
+  path: '/recupera-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReimpostaPasswordRoute = ReimpostaPasswordRouteImport.update({
+  id: '/reimposta-password',
+  path: '/reimposta-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
@@ -54,6 +66,8 @@ const AppCatalogoIdRoute = AppCatalogoIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/recupera-password': typeof RecuperaPasswordRoute
+  '/reimposta-password': typeof ReimpostaPasswordRoute
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
@@ -62,6 +76,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/recupera-password': typeof RecuperaPasswordRoute
+  '/reimposta-password': typeof ReimpostaPasswordRoute
   '/dashboard': typeof AppDashboardRoute
   '/didattica': typeof AppDidatticaRoute
   '/impostazioni': typeof AppImpostazioniRoute
@@ -72,6 +88,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/recupera-password': typeof RecuperaPasswordRoute
+  '/reimposta-password': typeof ReimpostaPasswordRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/didattica': typeof AppDidatticaRoute
   '/_app/impostazioni': typeof AppImpostazioniRoute
@@ -82,6 +100,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/recupera-password'
+    | '/reimposta-password'
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
@@ -90,6 +110,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/recupera-password'
+    | '/reimposta-password'
     | '/dashboard'
     | '/didattica'
     | '/impostazioni'
@@ -99,6 +121,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/recupera-password'
+    | '/reimposta-password'
     | '/_app/dashboard'
     | '/_app/didattica'
     | '/_app/impostazioni'
@@ -109,6 +133,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  RecuperaPasswordRoute: typeof RecuperaPasswordRoute
+  ReimpostaPasswordRoute: typeof ReimpostaPasswordRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -125,6 +151,20 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recupera-password': {
+      id: '/recupera-password'
+      path: '/recupera-password'
+      fullPath: '/recupera-password'
+      preLoaderRoute: typeof RecuperaPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reimposta-password': {
+      id: '/reimposta-password'
+      path: '/reimposta-password'
+      fullPath: '/reimposta-password'
+      preLoaderRoute: typeof ReimpostaPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/dashboard': {
@@ -186,6 +226,8 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  RecuperaPasswordRoute: RecuperaPasswordRoute,
+  ReimpostaPasswordRoute: ReimpostaPasswordRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
