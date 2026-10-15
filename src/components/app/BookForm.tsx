@@ -2,7 +2,10 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ErrorBox, IllustrativeNote } from "@/components/app/common";
+import { ErrorBox } from "@/components/app/common";
+import { MarcEditor } from "@/components/app/MarcEditor";
+import { checkStructure } from "@/lib/marc/structure";
+import type { MarcField } from "@/lib/api/types";
 import { BookLookup } from "@/components/app/BookLookup";
 import { DictationButton } from "@/components/app/Dictation";
 import { undoImport, type ImportField, type ImportResult } from "@/lib/sources/importPlan";
@@ -33,6 +36,7 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     dewey: initial.dewey, shelfMark: initial.shelfMark, status: initial.status as BookStatus,
   });
   const [mode, setMode] = useState<"assistita" | "manuale">("assistita");
+  const [marc, setMarc] = useState<{ leader: string | null; fields: MarcField[] | null }>({ leader: initial.marcLeader, fields: initial.marcFields });
   const [dictLang, setDictLang] = useState<SpeechLang>("it");
   const [prov, setProv] = useState<Partial<Record<ImportField, string>>>({});
   const [lastImport, setLastImport] = useState<ImportResult["applied"] | null>(null);
@@ -45,7 +49,7 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     title: f.title, authors: lines(f.authors), isbn: f.isbn, publisher: f.publisher, publicationPlace: f.publicationPlace,
     publicationYear: f.publicationYear, language: f.language, physicalDescription: f.physicalDescription, notes: f.notes,
     subjects: lines(f.subjects), dewey: f.dewey, shelfMark: f.shelfMark, status: f.status,
-    marcLeader: initial.marcLeader, marcFields: initial.marcFields,
+    marcLeader: marc.leader, marcFields: marc.fields,
   });
   const current = toInput();
 
@@ -77,6 +81,10 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
     setServerError(null);
     const input = toInput();
     if (Object.keys(validateBook(input)).length > 0) return;
+    if (checkStructure(input.marcLeader, input.marcFields).some((i) => i.level === "errore")) {
+      setServerError("Il record MARC21 contiene errori strutturali: correggili (vedi «Controlli» nella sezione Record MARC21) prima di salvare.");
+      return;
+    }
     setBusy(true);
     try {
       await onSubmit(input);
@@ -139,7 +147,7 @@ export function BookForm({ initial, submitLabel, onSubmit, onCancel }: Props) {
           {BOOK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       ))}
-      {initial.marcFields && <p className="text-sm text-muted-foreground"><IllustrativeNote>Dati MARC salvati</IllustrativeNote> Questa scheda contiene un record MARC21 completo: questo modulo non lo modifica né lo sovrascrive.</p>}
+      <MarcEditor leader={marc.leader} fields={marc.fields} book={current} onChange={(leader, fields) => setMarc({ leader, fields })} />
       {serverError && <ErrorBox message={serverError} />}
       {submitted && Object.keys(errors).length > 0 && <p role="alert" className="text-sm text-destructive">Correggi i campi evidenziati prima di salvare.</p>}
       <div className="flex flex-wrap gap-3">

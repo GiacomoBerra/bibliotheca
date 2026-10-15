@@ -143,11 +143,11 @@ function MarcView({ book: b }: { book: Book }) {
     <section aria-labelledby="marc" className="mt-8 overflow-hidden rounded-lg border-2 border-dashed border-primary/40">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-primary/5 px-6 py-4">
         <h2 id="marc" className="flex items-center gap-2 text-xl font-semibold"><FileCode2 className="h-5 w-5" aria-hidden /> Vista MARC21</h2>
-        <IllustrativeNote>{stored ? "Dati salvati, non validati" : "Anteprima illustrativa, non salvata"}</IllustrativeNote>
+        <IllustrativeNote>{stored ? "Dati salvati, struttura verificata" : "Anteprima illustrativa, non salvata"}</IllustrativeNote>
       </div>
       <div className="px-6 py-4 text-sm text-muted-foreground">
         {stored
-          ? "Record MARC21 salvato con la scheda (ordine, ripetizioni, indicatori e sottocampi conservati). L'app non ne verifica la validità."
+          ? "Record MARC21 salvato con la scheda (ordine, ripetizioni, indicatori e sottocampi conservati). La struttura (tag, indicatori, sottocampi) è verificata al salvataggio; la correttezza catalografica non è verificata."
           : "Anteprima ricavata dai campi della scheda con tag e indicatori a scopo didattico: non è stata validata e non viene salvata."}
         {" "}Una vista testuale come questa <strong className="text-foreground">non è un file MARC interoperabile</strong> (ISO 2709 o MARCXML).
       </div>

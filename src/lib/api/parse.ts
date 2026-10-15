@@ -1,4 +1,5 @@
 import { BOOK_STATUSES, emptyBookInput, type BookInput, type BookStatus, type MarcField } from "./types";
+import { checkStructure } from "../marc/structure";
 import { validateBook, type FieldErrors } from "./validation";
 
 const TEXT_FIELDS = ["title", "isbn", "publisher", "publicationPlace", "publicationYear", "language", "physicalDescription", "notes", "dewey", "shelfMark"] as const;
@@ -50,6 +51,9 @@ export function parseBookInput(raw: unknown): ParseResult {
     if (!Array.isArray(m) || m.length > MAX_MARC_FIELDS || !m.every(isMarcField)) return { ok: false, errors: { _: "Campi MARC non validi: serve un elenco di campi con tag, indicatori e sottocampi." } };
     out.marcFields = m as MarcField[];
   }
+  // Validità strutturale MARC21 applicata anche dal server: un record malformato non viene mai salvato.
+  const marcIssues = checkStructure(out.marcLeader, out.marcFields).filter((i) => i.level === "errore");
+  if (marcIssues.length) return { ok: false, errors: { _: "Record MARC21 non valido: " + marcIssues.slice(0, 3).map((i) => i.message).join(" ") } };
   const errors = validateBook(out);
   if (Object.keys(errors).length) return { ok: false, errors };
   return { ok: true, input: out };

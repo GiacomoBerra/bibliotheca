@@ -142,6 +142,22 @@ describe("Inserimento, modifica, cancellazione", () => {
     expect((await create(A, { title: "x", marcFields: { a: 1 } })).status).toBe(400);
     expect((await create(A, { title: "x", marcFields: [{ tag: "245" }] })).status).toBe(400);
   });
+  it("MARC21: la validità strutturale è imposta dal server (indicatori, codici, tipo di campo, leader)", async () => {
+    const bad = [
+      [{ tag: "245", ind1: "10", ind2: "0", subfields: [{ code: "a", value: "x" }] }],
+      [{ tag: "245", ind1: "1", ind2: "0", subfields: [{ code: "AB", value: "x" }] }],
+      [{ tag: "245", ind1: "1", ind2: "0", subfields: [] }],
+      [{ tag: "001", ind1: " ", ind2: " ", subfields: [{ code: "a", value: "x" }] }],
+      [{ tag: "245", value: "senza indicatori" }],
+    ];
+    for (const marcFields of bad) {
+      const r = await create(A, { title: "x", marcFields });
+      expect(r.status).toBe(400);
+      expect(r.json.error.fields?._ ?? r.json.error.message).toBeDefined();
+    }
+    expect((await create(A, { title: "x", marcLeader: "troppo corto" })).status).toBe(400);
+    expect((await create(A, { title: "Struttura MARC valida", marcLeader: "00000nam a2200000 a 4500", marcFields: [{ tag: "001", value: "id1" }] })).status).toBe(201);
+  });
   it("modifica e cancellazione, con 404 sulla seconda cancellazione", async () => {
     const id = (await create(A, { title: "Da modificare", subjects: ["Uno"] })).json.id;
     const up = await call("PUT", `/api/books/${id}`, { user: A, body: { title: "Modificato", status: "catalogato", subjects: ["Due", "Tre"] } });
