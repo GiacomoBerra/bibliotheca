@@ -12,7 +12,9 @@ Biblioteca personale privata per catalogare libri e imparare MARC21, soggettazio
 - Supabase NON si usa più (decisione definitiva del proprietario).
 
 ## Regole non negoziabili
-- Ogni Function che tocca i dati: 1) controllo CSRF, 2) identità da `getUser()` (sessione verificata lato server), 3) query SEMPRE filtrate con `owner_id = <id verificato>`. Mai accettare dal browser un id utente (parametri, corpo, intestazioni).
+- Catalogo UNICO e condiviso con due ruoli di Netlify Identity (`app_metadata.roles`): `admin` (consulta, inserisce, modifica, cancella, esporta, usa la ricerca su fonti esterne) e `viewer` (solo consulta: elenco, ricerca, schede complete con MARC21, statistiche). Nessun ruolo = nessun accesso (403).
+- Ogni Function che tocca i dati: 1) controllo CSRF, 2) identità E ruoli da `getUser()` (sessione verificata lato server), 3) autorizzazione per ruolo in `server/router.ts` PRIMA di qualsiasi query. Mai accettare dal browser un id utente o un ruolo (parametri, corpo, intestazioni). Nascondere un pulsante nell'interfaccia non è una protezione.
+- La ricerca su fonti esterne (`/api/lookup`) è solo admin, non scrive mai nel catalogo e tiene eventuali chiavi API solo nelle variabili d'ambiente del server.
 - Non attivare piani a pagamento, crediti extra o ricariche automatiche. Il database Netlify NON va provisionato finché il proprietario non approva i costi (vedi `docs/netlify-attivazione.md`): per questo le migrazioni stanno in `db/migrations` e NON in `netlify/database/migrations`, e `@netlify/database` non è installato. Non spostare né installare senza approvazione: un deploy farebbe creare il database.
 - Mai `drizzle-kit push/migrate` né DDL manuale su un database Netlify: lo schema arriva solo da file di migrazione applicati dal deploy. Non modificare migrazioni già applicate: scrivine una nuova.
 - Segreti: mai nel codice, nei log o nei file pubblici. `.env*` ignorato da git.

@@ -12,6 +12,12 @@ Non pubblicare in produzione senza conferma esplicita.
 3. **Identity > Users > Invite users**: invita la tua email (account proprietario). Apri il link ricevuto sulla Deploy Preview o sul sito: l'app mostra la pagina "Accetta invito" per scegliere la password (min. 12 caratteri).
 Identity non funziona con `netlify dev`: va provato su una Deploy Preview.
 
+## 2b. Ruoli (obbligatori: senza ruolo non si accede ai dati)
+In **Identity > Users**, apri l'utente → **Edit settings** (o «Edit user») → campo **Roles** → scrivi `admin` (o `viewer`) e salva. I nomi sono minuscoli e senza spazi. L'invito non assegna da solo un ruolo. Il ruolo vale dal login successivo (esci e rientra). Gli utenti `viewer` vedono e cercano lo stesso catalogo ma non possono modificare, cancellare, importare o esportare.
+
+## 2c. Variabili per la ricerca bibliografica (facoltative)
+**Project configuration > Environment variables**: `LOOKUP_CONTACT` (la tua email, usata solo nello User-Agent verso Open Library) e, solo se Google Books rifiuta le richieste senza chiave, `GOOGLE_BOOKS_API_KEY` (chiave gratuita, scope **Functions**, segreta). Dopo averle create serve un nuovo deploy.
+
 ## 3. Database — SOLO dopo aver approvato i costi
 Prima: controlla in **Team settings > Billing** il prezzo dello storage e i crediti residui; non attivare ricariche automatiche. Poi, in un branch:
 ```bash

@@ -7,7 +7,7 @@ Fonte: `db/migrations/20261016000001_books.sql` (fuori da `netlify/database/migr
 | Colonna | Tipo | Note |
 |---|---|---|
 | id | uuid PK | generato |
-| owner_id | text | id utente di Netlify Identity, **impostato dal server** dalla sessione verificata; mai dal browser |
+| created_by, updated_by | text | id utente di Netlify Identity di chi ha creato / modificato per ultimo, **impostati dal server** dalla sessione verificata; mai dal browser. Non limitano la lettura: il catalogo è condiviso |
 | title | text, obbligatorio | unico campo obbligatorio (1–500 caratteri non vuoti) |
 | authors | text[] | uno per elemento, ordine conservato |
 | isbn, publisher, publication_place, language, physical_description, notes, dewey, shelf_mark | text | tutti facoltativi |
@@ -39,7 +39,7 @@ Il database garantisce solo che sia un array. La **validità MARC21** (tag ammes
 
 ## Sicurezza
 Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa di connessione di Netlify (`NETLIFY_DB_URL`), che non lascia mai il server. L'autorizzazione è nel codice del server, verificata dai test:
-- ogni query include `owner_id = <id utente verificato>` (`server/booksRepo.ts`);
-- il corpo della richiesta non può impostare né cambiare `owner_id` (campi sconosciuti ignorati);
+- il catalogo è unico e condiviso; chi può fare cosa lo decide `server/router.ts` con il ruolo verificato (`admin` / `viewer`) prima di ogni query;
+- il corpo della richiesta non può impostare `created_by` / `updated_by` né alcun ruolo (campi sconosciuti ignorati);
 - SQL sempre parametrizzato; ORDER BY da whitelist; `%` e `_` della ricerca sono letterali;
 - limiti di lunghezza anche nel database (CHECK).
