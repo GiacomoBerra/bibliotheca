@@ -2,6 +2,17 @@
 
 Stati: proposta / implementata / testata / pubblicata. «Preview» = verificato dal proprietario su Deploy Preview PR #3.
 
+## Verifiche manuali confermate dal proprietario — 16 ott 2026 (Deploy Preview PR #6 e #7)
+Riferite dal proprietario; **non eseguite da Claude** e distinte dai test automatici (che sono nelle sezioni «Risultati dei test»). Non sono verifiche di produzione.
+| Funzione | Esito dichiarato | Dove |
+|---|---|---|
+| Colonna «Stato prestito» nel catalogo | corretta | Preview PR #6/#7 |
+| Filtro per disponibilità | funziona | Preview PR #6/#7 |
+| Catalogo condiviso e ruoli admin/viewer | verificati | Preview (PR #3 il 15 ott, di nuovo a PR #6/#7) |
+| Backup v4 e ripristino (storico e correzioni) | esito positivo | Preview PR #7 |
+Il dettaglio dei singoli passaggi provati non è stato fornito: le righe sopra riportano solo ciò che è stato confermato. Il database Netlify reale è quindi stato esercitato per queste funzioni; **lo stato «testata» della colonna e del backup v4 è ora: automatica + manuale su preview; produzione: no.**
+
+
 | Funzione | Stato | Prova |
 |---|---|---|
 | Catalogo condiviso su Netlify Database (inserimento, elenco, scheda) | testata (automatica) + verificata in preview | test automatici (vedi «Risultati dei test»); admin inserisce, viewer vede il libro (proprietario) |
