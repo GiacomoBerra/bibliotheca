@@ -1,34 +1,51 @@
-import type { Loan } from "./api/loans";
+import type { CorrectionAction, Loan, LoanCorrection, LoanCorrectionState } from "./api/loans";
 import type { Book } from "./api/types";
 import { toReadableText } from "./marc/structure";
 
 export const BACKUP_FORMAT = "bibliotheca-backup";
-/** Versione 1: solo schede. Versione 2: schede + copie fisiche + prestiti (storico completo, comprese le restituzioni). */
-export const BACKUP_VERSION = 2;
+/**
+ * Versione 1: solo schede. Versione 2: schede + copie fisiche + prestiti (storico delle restituzioni compreso).
+ * Versione 3: come la 2, più i prestiti ANNULLATI (con motivo e autore) e la cronologia delle correzioni.
+ */
+export const BACKUP_VERSION = 3;
 
 /** Un prestito nel backup. Gli stati (in ritardo, durata) non si salvano: si ricalcolano dalle date. `bookId` collega il prestito alla scheda del file. */
 export interface BackupLoan {
   bookId: string; bookTitle: string; copyNo: number;
   borrower: string; contact: string; notes: string;
   loanDate: string; plannedDays: number; dueDate: string; returnedDate: string | null;
+  /** Presente solo se il prestito è stato annullato perché registrato per errore. */
+  voided?: { at: string; by: string; reason: string };
+}
+/** Una correzione della cronologia, collegata al suo prestito dalla scheda e dai dati del prestito (gli id cambiano al ripristino). */
+export interface BackupCorrection {
+  bookId: string; borrower: string; loanDate: string; plannedDays: number;
+  action: CorrectionAction; reason: string; correctedBy: string; correctedAt: string;
+  before: LoanCorrectionState; after: LoanCorrectionState;
 }
 export const toBackupLoan = (l: Loan): BackupLoan => ({
   bookId: l.bookId, bookTitle: l.bookTitle, copyNo: l.copyNo, borrower: l.borrower ?? "", contact: l.contact ?? "", notes: l.notes ?? "",
   loanDate: l.loanDate, plannedDays: l.plannedDays, dueDate: l.dueDate, returnedDate: l.returnedDate,
+  ...(l.voidedAt ? { voided: { at: l.voidedAt, by: l.voidedBy ?? "", reason: l.voidReason ?? "" } } : {}),
 });
 
 /**
- * Copia completa e fedele. Senza `loans` produce la versione 1 (solo schede); con `loans` (anche vuoto) la versione 2
- * con `copies` e `loans`. Le copie fisiche sono elencate dai prestiti: oggi una copia esiste solo dopo il primo prestito.
- * Non è un file MARC interoperabile.
+ * Copia completa e fedele. Senza `loans` produce la versione 1 (solo schede); con `loans` (anche vuoto) la versione 3
+ * con `copies`, `loans` (anche annullati) e `corrections`. Le copie fisiche sono elencate dai prestiti: oggi una copia
+ * esiste solo dopo il primo prestito. Non è un file MARC interoperabile.
  */
-export function booksToJson(books: Book[], now = new Date(), loans?: Loan[]): string {
+export function booksToJson(books: Book[], now = new Date(), loans?: Loan[], corrections: { loan: Loan; items: LoanCorrection[] }[] = []): string {
   if (!loans) return JSON.stringify({ format: BACKUP_FORMAT, version: 1, exportedAt: now.toISOString(), count: books.length, books }, null, 2);
-  // I prestiti annullati (registrati per errore) non fanno parte del backup: ne è dichiarato il numero. La traccia delle correzioni resta nel database.
-  const all = loans;
-  loans = loans.filter((l) => l.state !== "annullato");
   const copies = [...new Map(loans.map((l) => [`${l.bookId}#${l.copyNo}`, { bookId: l.bookId, copyNo: l.copyNo }])).values()];
-  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length, loanCount: loans.length, ...(all.length !== loans.length ? { voidedLoansNotIncluded: all.length - loans.length } : {}), books, copies, loans: loans.map(toBackupLoan) }, null, 2);
+  const flat: BackupCorrection[] = corrections.flatMap(({ loan, items }) => items.map((c) => ({
+    bookId: loan.bookId, borrower: loan.borrower ?? "", loanDate: loan.loanDate, plannedDays: loan.plannedDays,
+    action: c.action, reason: c.reason, correctedBy: c.correctedBy, correctedAt: c.correctedAt, before: c.before, after: c.after,
+  })));
+  return JSON.stringify({
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length,
+    loanCount: loans.length, voidedLoanCount: loans.filter((l) => l.voidedAt).length, correctionCount: flat.length,
+    books, copies, loans: loans.map(toBackupLoan), corrections: flat,
+  }, null, 2);
 }
 
 /** Neutralizza le "formule" (=, +, -, @, tab, CR) quando il CSV viene aperto in un foglio di calcolo. */

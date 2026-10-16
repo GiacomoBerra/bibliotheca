@@ -19,7 +19,7 @@ const readText = (f: File): Promise<string> =>
 
 type Loaded = Extract<ParsedBackup, { ok: true }>;
 type Mode = "json" | "csv" | "isbn";
-export interface BackupDone { books: number; loans: number }
+export interface BackupDone { books: number; loans: number; voided?: number; corrections?: number }
 
 /**
  * Importazione/ripristino: da backup JSON, da CSV o da elenco di ISBN (ricerca nelle fonti). Flusso comune:
@@ -199,7 +199,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
           {hasLoans && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={withLoans} onChange={(e) => setWithLoans(e.target.checked)} className="mt-1" />
-              <span>Ripristina anche i {loaded.loans!.length} prestiti del file (storico compreso), saltando quelli già presenti. Solo per le schede create, aggiornate o riconosciute come già presenti.</span>
+              <span>Ripristina anche i {loaded.loans!.length} prestiti del file (storico e prestiti annullati compresi: questi tornano annullati, con una nota di tracciamento), saltando quelli già presenti. Solo per le schede create, aggiornate o riconosciute come già presenti.</span>
             </label>
           )}
           {!hasLoans && mode === "json" && loaded.version === 1 && <p className="text-sm text-muted-foreground">Questo backup non contiene prestiti.</p>}
@@ -212,7 +212,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
               <>
                 <p className="text-muted-foreground">Il catalogo contiene {existingCount} schede. Prima di importare scarica un backup completo (schede, copie e prestiti): il programma lo rilegge e ne controlla i conteggi.</p>
                 <Button type="button" variant="outline" size="sm" className="mt-2" disabled={busy !== null} onClick={() => void makeBackup()}>Scarica e verifica il backup attuale</Button>
-                {backup && <p role="status" className="mt-2">Backup scaricato e verificato: {backup.books} schede e {backup.loans} prestiti. Conservalo fuori da questo browser.</p>}
+                {backup && <p role="status" className="mt-2">Backup scaricato e verificato: {backup.books} schede e {backup.loans} prestiti{backup.voided !== undefined ? ` (di cui ${backup.voided} annullati)` : ""}{backup.corrections !== undefined ? ` e ${backup.corrections} correzioni` : ""}. Conservalo fuori da questo browser.</p>}
               </>
             )}
           </div>
@@ -233,7 +233,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
           {result.books.failed.length > 0 && <ul className="list-disc pl-5 text-destructive">{result.books.failed.slice(0, 20).map((f) => <li key={f.index}>Scheda {f.index + 1} («{f.title}»): {f.message}</li>)}</ul>}
           {result.loans && (
             <>
-              <p role="status"><strong>{result.loans.created}</strong> prestiti ripristinati, <strong>{result.loans.duplicates}</strong> già presenti, <strong>{result.loans.noBook}</strong> non collegati a una scheda importata, <strong>{result.loans.failed.length}</strong> non riusciti.</p>
+              <p role="status"><strong>{result.loans.created}</strong> prestiti ripristinati{result.loans.voidedCreated > 0 ? <> (di cui <strong>{result.loans.voidedCreated}</strong> annullati)</> : null}, <strong>{result.loans.duplicates}</strong> già presenti, <strong>{result.loans.noBook}</strong> non collegati a una scheda importata, <strong>{result.loans.failed.length}</strong> non riusciti.</p>
               {result.loans.failed.length > 0 && <ul className="list-disc pl-5 text-destructive">{result.loans.failed.slice(0, 20).map((f) => <li key={f.label}>{f.label}: {f.message}</li>)}</ul>}
             </>
           )}

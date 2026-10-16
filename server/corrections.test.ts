@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { booksToJson } from "../src/lib/export";
-import { parseBackup } from "../src/lib/backup";
+import { applyLoanRestore, parseBackup } from "../src/lib/backup";
 import { api, makeDeps, makeTestDb } from "./testHarness";
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -260,20 +260,60 @@ describe("Permessi: verificati lato server", () => {
   });
 });
 
-describe("Backup e prestiti annullati", () => {
-  it("il backup v2 non include i prestiti annullati e dichiara quanti ne ha esclusi; i prestiti validi restano", async () => {
-    const b = await newBook("Backup");
+describe("Backup v3: prestiti annullati e cronologia correzioni", () => {
+  const adapter = {
+    createLoan: async (bookId: string, input: any) => { const r = await admin("POST", `/api/books/${bookId}/loans`, input); if (r.status !== 201) throw new Error(r.json?.error ?? String(r.status)); return r.json; },
+    listBookLoans: async (bookId: string) => ({ loans: (await admin("GET", `/api/books/${bookId}/loans`)).json.loans }),
+  } as any;
+
+  it("il backup v3 include prestiti annullati (motivo e autore) e correzioni, e si rilegge senza errori", async () => {
+    const b = await newBook("Backup v3");
     const bad = (await lend(b, { borrower: "Errore" })).json;
-    await admin("POST", `/api/loans/${bad.id}/void`, { reason: "errore" });
+    await admin("POST", `/api/loans/${bad.id}/void`, { reason: "registrato per errore" });
     const good = (await lend(b, { borrower: "Valido", loanDate: "2026-10-05" })).json;
     await giveBack(good.id, "2026-10-06");
+    await admin("POST", `/api/loans/${good.id}/undo-return`, { reason: "data sbagliata" });
     const items = (await admin("GET", `/api/loans?state=tutti&bookId=${b}&pageSize=100`)).json.items;
     expect(items).toHaveLength(2);
-    const json = booksToJson([], new Date("2026-10-15T10:00:00Z"), items);
+    const withCorr = [];
+    for (const l of items) { const c = (await admin("GET", `/api/loans/${l.id}/corrections`)).json.items; if (c.length) withCorr.push({ loan: l, items: c }); }
+    const json = booksToJson([], new Date("2026-10-15T10:00:00Z"), items, withCorr);
     const parsed = JSON.parse(json);
-    expect(parsed.loanCount).toBe(1);
-    expect(parsed.voidedLoansNotIncluded).toBe(1);
-    expect(parsed.loans.map((l: any) => l.borrower)).toEqual(["Valido"]);
-    expect(parseBackup(json)).toMatchObject({ ok: true, version: 2, loanIssues: [] });
+    expect(parsed).toMatchObject({ version: 3, loanCount: 2, voidedLoanCount: 1, correctionCount: 2 });
+    expect(parsed.loans.find((l: any) => l.borrower === "Errore").voided).toMatchObject({ reason: "registrato per errore", by: ADMIN });
+    expect(parsed.corrections.map((c: any) => c.action).sort()).toEqual(["annulla_prestito", "annulla_restituzione"]);
+    expect(parseBackup(json)).toMatchObject({ ok: true, version: 3, loanIssues: [] });
+  });
+
+  it("round trip: il prestito annullato torna annullato con traccia, non conta come attivo, nessun duplicato al secondo ripristino", async () => {
+    const src = await newBook("Round trip");
+    const bad = (await lend(src, { borrower: "Sbagliato", loanDate: "2026-10-02" })).json;
+    await admin("POST", `/api/loans/${bad.id}/void`, { reason: "libro sbagliato" });
+    const items = (await admin("GET", `/api/loans?state=tutti&bookId=${src}&pageSize=100`)).json.items;
+    const text = booksToJson([], new Date(), items, []);
+    const back = parseBackup(text);
+    if (!back.ok) throw new Error("backup non valido");
+    const dst = await newBook("Round trip destinazione");
+    const first = await applyLoanRestore(adapter, back.loans!, { [src]: dst });
+    expect(first).toMatchObject({ created: 1, voidedCreated: 1, duplicates: 0, failed: [] });
+    const hist = (await admin("GET", `/api/books/${dst}/loans`)).json;
+    expect(hist.availability).toBe("disponibile");
+    expect(hist.loans).toHaveLength(1);
+    expect(hist.loans[0]).toMatchObject({ state: "annullato", voidReason: "libro sbagliato", borrower: "Sbagliato" });
+    const c = (await admin("GET", `/api/loans/${hist.loans[0].id}/corrections`)).json.items;
+    expect(c).toHaveLength(1);
+    expect(c[0].reason).toMatch(/Ripristinato da backup/);
+    expect(c[0].after.restoredFrom).toMatchObject({ reason: "libro sbagliato", by: ADMIN });
+    const second = await applyLoanRestore(adapter, back.loans!, { [src]: dst });
+    expect(second).toMatchObject({ created: 0, duplicates: 1 });
+    expect((await admin("GET", `/api/books/${dst}/loans`)).json.loans).toHaveLength(1);
+    expect((await lend(dst, { borrower: "Nuovo", loanDate: "2026-10-10" })).status).toBe(201); // la copia è libera
+  });
+
+  it("il backup v2 resta leggibile e avverte che annullati e correzioni non sono inclusi", () => {
+    const v2 = JSON.stringify({ format: "bibliotheca-backup", version: 2, count: 0, loanCount: 0, books: [], loans: [] });
+    const r = parseBackup(v2);
+    expect(r).toMatchObject({ ok: true, version: 2 });
+    if (r.ok) expect(r.warnings.join(" ")).toMatch(/annullati/);
   });
 });

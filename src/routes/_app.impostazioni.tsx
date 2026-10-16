@@ -6,7 +6,7 @@ import { ErrorBox, PageHeader } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
 import { useAuth } from "@/lib/auth/AuthProvider";
-import { listEveryLoan, parseBackup } from "@/lib/backup";
+import { listEveryCorrection, listEveryLoan, parseBackup } from "@/lib/backup";
 import { booksToCsv, booksToJson, booksToMarcText, downloadText } from "@/lib/export";
 
 export const Route = createFileRoute("/_app/impostazioni")({
@@ -27,16 +27,19 @@ function Impostazioni() {
   const [done, setDone] = useState<string | null>(null);
 
   /** Backup JSON completo (schede, copie, prestiti e storico): lo rilegge prima di salvarlo e controlla i conteggi. */
-  async function makeBackup(): Promise<{ books: number; loans: number }> {
+  async function makeBackup(): Promise<{ books: number; loans: number; voided: number; corrections: number }> {
     const books = await api.listAllBooks();
     const loans = await listEveryLoan(api);
-    const text = booksToJson(books, new Date(), loans);
+    const corrections = await listEveryCorrection(api, loans);
+    const correctionTotal = corrections.reduce((n, c) => n + c.items.length, 0);
+    const voided = loans.filter((l) => l.voidedAt).length;
+    const text = booksToJson(books, new Date(), loans, corrections);
     const back = parseBackup(text);
-    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0) {
+    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0 || (back.loans?.filter((l) => l.voided).length ?? -1) !== voided || (back.corrections?.length ?? -1) !== correctionTotal) {
       throw new Error("Il backup generato non supera il controllo di rilettura: non è stato salvato. Riprova; se il problema continua, non importare nulla.");
     }
     downloadText(`bibliotheca-backup-${new Date().toISOString().slice(0, 10)}.json`, text, "application/json");
-    return { books: books.length, loans: loans.length };
+    return { books: books.length, loans: loans.length, voided, corrections: correctionTotal };
   }
 
   async function run(kind: "json" | "csv" | "marc") {
@@ -46,7 +49,7 @@ function Impostazioni() {
     try {
       if (kind === "json") {
         const b = await makeBackup();
-        setDone(`Backup salvato e verificato: ${b.books} schede e ${b.loans} prestiti (storico compreso).`);
+        setDone(`Backup salvato e verificato: ${b.books} schede e ${b.loans} prestiti (di cui ${b.voided} annullati) e ${b.corrections} correzioni di cronologia.`);
         return;
       }
       const books = await api.listAllBooks();

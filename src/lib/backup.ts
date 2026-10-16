@@ -1,7 +1,7 @@
 import { parseBookInput } from "./api/parse";
 import type { Book, BookInput, BooksApi } from "./api/types";
-import { isIsoDate, type Loan } from "./api/loans";
-import { BACKUP_FORMAT, type BackupLoan } from "./export";
+import { isIsoDate, type Loan, type LoanCorrection } from "./api/loans";
+import { BACKUP_FORMAT, type BackupCorrection, type BackupLoan } from "./export";
 
 /**
  * Ripristino da un backup JSON creato da Bibliotheca. Principi:
@@ -11,13 +11,13 @@ import { BACKUP_FORMAT, type BackupLoan } from "./export";
  * - le scritture avvengono con le API normali (che verificano il ruolo admin lato server).
  */
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
-export const SUPPORTED_VERSIONS = [1, 2];
+export const SUPPORTED_VERSIONS = [1, 2, 3];
 
 export interface RecordIssue { index: number; title: string; errors: string[] }
 export interface BackupItem { index: number; id?: string; input: BookInput; /** Cose da controllare (non bloccanti). */ notes?: string[] }
 export type ParsedBackup =
   | { ok: false; message: string }
-  | { ok: true; exportedAt?: string; declaredCount: number | null; items: BackupItem[]; issues: RecordIssue[]; warnings: string[]; version?: number; loans?: BackupLoan[]; loanIssues?: string[] };
+  | { ok: true; exportedAt?: string; declaredCount: number | null; items: BackupItem[]; issues: RecordIssue[]; warnings: string[]; version?: number; loans?: BackupLoan[]; loanIssues?: string[]; corrections?: BackupCorrection[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -52,18 +52,26 @@ export function parseBackup(text: string): ParsedBackup {
   if (declared !== null && declared !== o["books"].length) warnings.push(`Il file dichiara ${declared} schede ma ne contiene ${o["books"].length}: potrebbe essere incompleto.`);
   const out: ParsedBackup = { ok: true, ...(typeof o["exportedAt"] === "string" ? { exportedAt: o["exportedAt"] } : {}), declaredCount: declared, items, issues, warnings, version: o["version"] };
   if (o["version"] === 1) warnings.push("Backup di versione 1: contiene solo le schede, NON copie fisiche né prestiti.");
-  if (o["version"] === 2) {
-    const { loans, issues: loanIssues } = parseBackupLoans(o["loans"]);
+  if (o["version"] === 2 || o["version"] === 3) {
+    const { loans, issues: loanIssues } = parseBackupLoans(o["loans"], o["version"] === 3);
     out.loans = loans;
     out.loanIssues = loanIssues;
     const declaredLoans = typeof o["loanCount"] === "number" ? o["loanCount"] : null;
     if (declaredLoans !== null && Array.isArray(o["loans"]) && declaredLoans !== o["loans"].length) warnings.push(`Il file dichiara ${declaredLoans} prestiti ma ne contiene ${o["loans"].length}: potrebbe essere incompleto.`);
   }
+  if (o["version"] === 2) warnings.push("Backup di versione 2: i prestiti annullati per errore e la cronologia delle correzioni non sono inclusi nel file.");
+  if (o["version"] === 3) {
+    const corr = Array.isArray(o["corrections"]) ? (o["corrections"] as unknown[]).filter((c): c is BackupCorrection => !!c && typeof c === "object" && typeof (c as BackupCorrection).reason === "string" && typeof (c as BackupCorrection).bookId === "string") : [];
+    out.corrections = corr;
+    const declaredCorr = typeof o["correctionCount"] === "number" ? o["correctionCount"] : null;
+    if (declaredCorr !== null && declaredCorr !== corr.length) warnings.push(`Il file dichiara ${declaredCorr} correzioni ma ne contiene ${corr.length}: potrebbe essere incompleto.`);
+    if (corr.length > 0) warnings.push(`Il file contiene ${corr.length} correzioni di cronologia: le registrazioni annullate si ripristinano come annullate, con una nota di tracciamento; il dettaglio completo resta nel file.`);
+  }
   return out;
 }
 
-function parseBackupLoans(raw: unknown): { loans: BackupLoan[]; issues: string[] } {
-  if (!Array.isArray(raw)) return { loans: [], issues: ["Backup di versione 2 senza l'elenco «loans»."] };
+function parseBackupLoans(raw: unknown, allowVoided: boolean): { loans: BackupLoan[]; issues: string[] } {
+  if (!Array.isArray(raw)) return { loans: [], issues: ["Backup senza l'elenco «loans»."] };
   const loans: BackupLoan[] = [];
   const issues: string[] = [];
   raw.forEach((x, i) => {
@@ -72,7 +80,10 @@ function parseBackupLoans(raw: unknown): { loans: BackupLoan[]; issues: string[]
     const borrower = str(o["borrower"]), contact = str(o["contact"]), notes = str(o["notes"]);
     const days = o["plannedDays"], copyNo = o["copyNo"];
     const ret = o["returnedDate"] ?? null;
+    const vv = allowVoided && o["voided"] && typeof o["voided"] === "object" ? (o["voided"] as Record<string, unknown>) : null;
+    const voided = vv && typeof vv["at"] === "string" && typeof vv["reason"] === "string" && vv["reason"].trim().length >= 3 && vv["reason"].length <= 500 ? { at: vv["at"], by: typeof vv["by"] === "string" ? vv["by"] : "", reason: vv["reason"].trim() } : null;
     const err =
+      o["voided"] != null && !voided ? "dati dell'annullamento non validi" :
       typeof o["bookId"] !== "string" || !o["bookId"] ? "manca il collegamento al libro" :
       !borrower ? "nome del destinatario mancante" : borrower.length > 200 ? "nome troppo lungo" :
       contact === null || contact.length > 200 ? "recapito non valido" : notes === null || notes.length > 1000 ? "note non valide" :
@@ -82,7 +93,7 @@ function parseBackupLoans(raw: unknown): { loans: BackupLoan[]; issues: string[]
       ret !== null && (ret as string) < (o["loanDate"] as string) ? "restituzione precedente all'inizio del prestito" :
       typeof copyNo !== "number" || !Number.isInteger(copyNo) || copyNo < 1 ? "numero di copia non valido" : null;
     if (err) { issues.push(`Prestito ${i + 1}${typeof o["bookTitle"] === "string" ? ` («${o["bookTitle"]}»)` : ""}: ${err}.`); return; }
-    loans.push({ bookId: o["bookId"] as string, bookTitle: typeof o["bookTitle"] === "string" ? o["bookTitle"] : "", copyNo: copyNo as number, borrower: borrower!, contact: contact!, notes: notes!, loanDate: o["loanDate"] as string, plannedDays: days as number, dueDate: typeof o["dueDate"] === "string" ? o["dueDate"] : "", returnedDate: ret as string | null });
+    loans.push({ bookId: o["bookId"] as string, bookTitle: typeof o["bookTitle"] === "string" ? o["bookTitle"] : "", copyNo: copyNo as number, borrower: borrower!, contact: contact!, notes: notes!, loanDate: o["loanDate"] as string, plannedDays: days as number, dueDate: typeof o["dueDate"] === "string" ? o["dueDate"] : "", returnedDate: ret as string | null, ...(voided ? { voided } : {}) });
   });
   return { loans, issues };
 }
@@ -160,6 +171,8 @@ export async function applyRestore(api: Pick<BooksApi, "createBook" | "updateBoo
 
 export interface LoanRestoreResult {
   created: number;
+  /** di cui annullati (ripristinati come annullati, con traccia) */
+  voidedCreated: number;
   /** già presenti (stesso destinatario, stessa data di inizio e stessa durata) */
   duplicates: number;
   /** collegati a una scheda non importata/non corrispondente: non ripristinati */
@@ -167,7 +180,7 @@ export interface LoanRestoreResult {
   failed: { label: string; message: string }[];
 }
 
-const loanKey = (l: { borrower: string | null; loanDate: string; plannedDays: number }) => `${(l.borrower ?? "").trim().toLowerCase()}|${l.loanDate}|${l.plannedDays}`;
+const loanKey = (l: { borrower: string | null; loanDate: string; plannedDays: number }, voided = false) => `${voided ? "V" : "A"}|${(l.borrower ?? "").trim().toLowerCase()}|${l.loanDate}|${l.plannedDays}`;
 
 /**
  * Ripristina i prestiti del backup sulle schede corrispondenti (`idMap`). Non cancella e non modifica prestiti esistenti:
@@ -175,9 +188,10 @@ const loanKey = (l: { borrower: string | null; loanDate: string; plannedDays: nu
  * Solo la copia n. 1 è ripristinabile (l'app non gestisce ancora altre copie). L'autore della registrazione diventa chi ripristina.
  */
 export async function applyLoanRestore(api: Pick<BooksApi, "createLoan" | "listBookLoans">, loans: BackupLoan[], idMap: Record<string, string>, onProgress?: (done: number, total: number) => void): Promise<LoanRestoreResult> {
-  const res: LoanRestoreResult = { created: 0, duplicates: 0, noBook: 0, failed: [] };
+  const res: LoanRestoreResult = { created: 0, voidedCreated: 0, duplicates: 0, noBook: 0, failed: [] };
   const existing = new Map<string, Set<string>>();
-  const ordered = [...loans].sort((a, b) => Number(a.returnedDate === null) - Number(b.returnedDate === null) || a.loanDate.localeCompare(b.loanDate));
+  const rank = (l: BackupLoan) => (l.voided ? 0 : l.returnedDate !== null ? 1 : 2);
+  const ordered = [...loans].sort((a, b) => rank(a) - rank(b) || a.loanDate.localeCompare(b.loanDate));
   let done = 0;
   for (const l of ordered) {
     const label = `«${l.bookTitle || l.bookId}», ${l.borrower}, dal ${l.loanDate}`;
@@ -186,13 +200,15 @@ export async function applyLoanRestore(api: Pick<BooksApi, "createLoan" | "listB
       if (!target) res.noBook++;
       else if (l.copyNo !== 1) res.failed.push({ label, message: `copia n. ${l.copyNo}: l'app gestisce per ora solo la copia n. 1, il prestito non è stato ripristinato.` });
       else {
-        if (!existing.has(target)) existing.set(target, new Set((await api.listBookLoans(target)).loans.filter((x) => x.state !== "annullato").map(loanKey)));
+        if (!existing.has(target)) existing.set(target, new Set((await api.listBookLoans(target)).loans.map((x) => loanKey(x, x.state === "annullato"))));
         const seen = existing.get(target)!;
-        if (seen.has(loanKey(l))) res.duplicates++;
+        const key = loanKey(l, !!l.voided);
+        if (seen.has(key)) res.duplicates++;
         else {
-          await api.createLoan(target, { borrower: l.borrower, contact: l.contact, loanDate: l.loanDate, plannedDays: l.plannedDays, notes: l.notes, returnedDate: l.returnedDate });
-          seen.add(loanKey(l));
+          await api.createLoan(target, { borrower: l.borrower, contact: l.contact, loanDate: l.loanDate, plannedDays: l.plannedDays, notes: l.notes, returnedDate: l.returnedDate, ...(l.voided ? { voidedRestore: { reason: l.voided.reason, originalAt: l.voided.at, originalBy: l.voided.by || "sconosciuto" } } : {}) });
+          seen.add(key);
           res.created++;
+          if (l.voided) res.voidedCreated++;
         }
       }
     } catch (e) {
@@ -211,6 +227,16 @@ export async function listEveryLoan(api: Pick<BooksApi, "listLoans">): Promise<L
     const r = await api.listLoans({ state: "tutti", page, pageSize: 100 });
     out.push(...r.items);
     if (out.length >= r.total || r.items.length === 0) break;
+  }
+  return out;
+}
+
+/** Cronologia delle correzioni di tutti i prestiti che ne hanno almeno una (una chiamata per prestito corretto, non per libro). */
+export async function listEveryCorrection(api: Pick<BooksApi, "listLoanCorrections">, loans: Loan[]): Promise<{ loan: Loan; items: LoanCorrection[] }[]> {
+  const out: { loan: Loan; items: LoanCorrection[] }[] = [];
+  for (const loan of loans) {
+    if (!loan.correctionCount) continue;
+    out.push({ loan, items: await api.listLoanCorrections(loan.id) });
   }
   return out;
 }

@@ -52,12 +52,18 @@ export interface Loan {
   voidedAt: string | null;
   /** Motivazione dell'annullamento: riservata all'amministratore (null per il visualizzatore). */
   voidReason: string | null;
+  /** Chi ha annullato il prestito: riservato all'amministratore (null per il visualizzatore). */
+  voidedBy: string | null;
   /** Numero di correzioni registrate su questo prestito (annullamenti di restituzione compresi). */
   correctionCount: number;
 }
 
 export type CorrectionAction = "annulla_prestito" | "annulla_restituzione";
-export interface LoanCorrectionState { state: "attivo" | "restituito" | "annullato"; returnedDate: string | null; returnedBy: string | null; voided: boolean }
+export interface LoanCorrectionState {
+  state: "attivo" | "restituito" | "annullato"; returnedDate: string | null; returnedBy: string | null; voided: boolean;
+  /** Presente quando il prestito annullato è stato ripristinato da un backup: l'annullamento originale. */
+  restoredFrom?: { at: string; by: string; reason: string };
+}
 /** Una riga della traccia delle correzioni (solo amministratori). */
 export interface LoanCorrection {
   id: string; loanId: string; action: CorrectionAction; reason: string;
@@ -66,7 +72,11 @@ export interface LoanCorrection {
 }
 
 /** `returnedDate`: solo per registrare un prestito già concluso (ripristino di backup o inserimento a posteriori). */
-export interface LoanInput { borrower: string; contact: string; loanDate: string; plannedDays: number; notes: string; returnedDate?: string | null }
+export interface LoanInput {
+  borrower: string; contact: string; loanDate: string; plannedDays: number; notes: string; returnedDate?: string | null;
+  /** Solo per il ripristino di un backup: il prestito nasce già annullato, con l'annullamento originale nella traccia. */
+  voidedRestore?: { reason: string; originalAt: string; originalBy: string };
+}
 export interface LoanEditInput { borrower: string; contact: string; plannedDays: number; notes: string }
 
 export type LoanStateFilter = "attivi" | "in ritardo" | "restituiti" | "annullati" | "tutti";
@@ -115,7 +125,7 @@ export function availabilityOf(loans: Pick<Loan, "state">[]): Availability {
 }
 
 export type FieldErrors = Record<string, string>;
-interface RawLoan { borrower?: unknown; contact?: unknown; notes?: unknown; loanDate?: unknown; plannedDays?: unknown; returnedDate?: unknown }
+interface RawLoan { voidedRestore?: unknown; borrower?: unknown; contact?: unknown; notes?: unknown; loanDate?: unknown; plannedDays?: unknown; returnedDate?: unknown }
 type Parsed<T> = { ok: true; value: T } | { ok: false; errors: FieldErrors };
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : v == null ? "" : null);
 
@@ -134,8 +144,15 @@ export function parseLoanInput(raw: unknown): Parsed<LoanInput> {
   const ret = o.returnedDate == null || o.returnedDate === "" ? null : o.returnedDate;
   if (ret !== null && !isIsoDate(ret)) errors["returnedDate"] = "La data di restituzione non è valida (formato AAAA-MM-GG).";
   else if (ret !== null && isIsoDate(o.loanDate) && ret < o.loanDate) errors["returnedDate"] = "La restituzione non può precedere l'inizio del prestito.";
+  let voidedRestore: LoanInput["voidedRestore"];
+  if (o.voidedRestore != null) {
+    const v = o.voidedRestore as { reason?: unknown; originalAt?: unknown; originalBy?: unknown };
+    const ok = (x: unknown, max: number): x is string => typeof x === "string" && x.trim().length > 0 && x.length <= max;
+    if (!v || typeof v !== "object" || !ok(v.reason, REASON_LIMITS.max) || (v.reason as string).trim().length < REASON_LIMITS.min || !ok(v.originalAt, 40) || !ok(v.originalBy, 200)) errors["voidedRestore"] = "I dati dell'annullamento originale non sono validi.";
+    else voidedRestore = { reason: (v.reason as string).trim(), originalAt: v.originalAt as string, originalBy: v.originalBy as string };
+  }
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes!, ...(ret !== null ? { returnedDate: ret as string } : {}) } };
+  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes!, ...(ret !== null ? { returnedDate: ret as string } : {}), ...(voidedRestore ? { voidedRestore } : {}) } };
 }
 
 export function parseLoanEdit(raw: unknown): Parsed<LoanEditInput> {

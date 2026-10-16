@@ -15,11 +15,11 @@ interface LoanRow {
   id: string; book_id: string; book_title: string; copy_id: string; copy_no: number;
   borrower_name: string; contact: string | null; notes: string | null;
   loan_date: string; planned_days: number; due_date: string; returned_date: string | null;
-  voided_at: string | null; void_reason: string | null; correction_count: number | string;
+  voided_at: string | null; void_reason: string | null; voided_by: string | null; correction_count: number | string;
 }
 const SELECT = `select l.id, l.book_id, b.title as book_title, l.copy_id, c.copy_no, l.borrower_name, l.contact, l.notes,
   l.loan_date::text as loan_date, l.planned_days, l.due_date::text as due_date, l.returned_date::text as returned_date,
-  to_char(l.voided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as voided_at, l.void_reason,
+  to_char(l.voided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as voided_at, l.void_reason, l.voided_by,
   (select count(*) from loan_corrections k where k.loan_id = l.id) as correction_count
   from loans l join books b on b.id = l.book_id join book_copies c on c.id = l.copy_id`;
 
@@ -29,7 +29,7 @@ function toLoan(r: LoanRow, today: string, redact: boolean): Loan {
     id: r.id, bookId: r.book_id, bookTitle: r.book_title, copyId: r.copy_id, copyNo: Number(r.copy_no),
     borrower: redact ? null : r.borrower_name, contact: redact ? null : r.contact, notes: redact ? null : r.notes,
     loanDate: r.loan_date, plannedDays: Number(r.planned_days), dueDate: r.due_date, returnedDate: r.returned_date,
-    voidedAt: r.voided_at, voidReason: redact ? null : r.void_reason, correctionCount: Number(r.correction_count),
+    voidedAt: r.voided_at, voidReason: redact ? null : r.void_reason, voidedBy: redact ? null : r.voided_by, correctionCount: Number(r.correction_count),
     ...loanDerived({ loanDate: r.loan_date, dueDate: r.due_date, returnedDate: r.returned_date, voidedAt: r.voided_at }, today),
   };
 }
@@ -83,11 +83,26 @@ export async function createLoan(db: Db, userId: string, bookId: string, input: 
   const copy = (await db.query<{ id: string }>(`select id from book_copies where book_id = $1 and copy_no = $2`, [bookId, copyNo])).rows[0];
   if (!copy) throw new LoanError(404, "not_found", "Copia non trovata.");
   try {
-    const r = await db.query<{ id: string }>(
-      `insert into loans (book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by, returned_date, returned_by)
-       values ($1, $2, $3, $4, $5::date, $6, $5::date + $6::int, $7, $8, $9::date, $10) returning id`,
-      [bookId, copy.id, input.borrower, input.contact || null, input.loanDate, input.plannedDays, input.notes || null, userId, input.returnedDate ?? null, input.returnedDate ? userId : null],
-    );
+    const v = input.voidedRestore;
+    const r = v
+      // Ripristino di un prestito già annullato: nasce annullato, con la traccia dell'annullamento originale (una sola istruzione = atomica).
+      ? await db.query<{ id: string }>(
+        `with ins as (
+           insert into loans (book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by, returned_date, returned_by, voided_at, voided_by, void_reason)
+           values ($1, $2, $3, $4, $5::date, $6, $5::date + $6::int, $7, $8, $9::date, $10, now(), $8, $11) returning id, returned_date::text as rd, returned_by as rb)
+         insert into loan_corrections (loan_id, action, reason, corrected_by, before_state, after_state)
+         select id, 'annulla_prestito', $12, $8,
+                jsonb_build_object('state', case when rd is null then 'attivo' else 'restituito' end, 'returnedDate', rd, 'returnedBy', rb, 'voided', false),
+                jsonb_build_object('state', 'annullato', 'returnedDate', rd, 'returnedBy', rb, 'voided', true, 'restoredFrom', jsonb_build_object('at', $13::text, 'by', $14::text, 'reason', $11::text))
+         from ins returning loan_id as id`,
+        [bookId, copy.id, input.borrower, input.contact || null, input.loanDate, input.plannedDays, input.notes || null, userId, input.returnedDate ?? null, input.returnedDate ? userId : null,
+          v.reason, `Ripristinato da backup. Annullamento originale del ${v.originalAt} da ${v.originalBy}: ${v.reason}`.slice(0, 500), v.originalAt, v.originalBy],
+      )
+      : await db.query<{ id: string }>(
+        `insert into loans (book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by, returned_date, returned_by)
+         values ($1, $2, $3, $4, $5::date, $6, $5::date + $6::int, $7, $8, $9::date, $10) returning id`,
+        [bookId, copy.id, input.borrower, input.contact || null, input.loanDate, input.plannedDays, input.notes || null, userId, input.returnedDate ?? null, input.returnedDate ? userId : null],
+      );
     return (await getLoan(db, r.rows[0]!.id, today))!;
   } catch (e) {
     if (pgCode(e) === "23505") throw new LoanError(409, "already_on_loan", "Questa copia risulta già in prestito: registra prima la restituzione. Nessun nuovo prestito è stato salvato.");

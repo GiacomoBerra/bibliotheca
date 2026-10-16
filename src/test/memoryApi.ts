@@ -24,7 +24,7 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
     const act = loans.filter((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt).map(refresh);
     return summarizeAvailability(1, act.length, act.filter((l) => l.state === "in ritardo").length);
   };
-  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null } : l);
+  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null, voidedBy: null } : l);
   const nCorr = (l: Loan): Loan => ({ ...l, correctionCount: corrections.filter((c) => c.loanId === l.id).length });
   const api: BooksApi & { all(): Book[]; allLoans(): Loan[]; forceAvailability(bookId: string, a: BookAvailability): void } = {
     all: () => books,
@@ -56,7 +56,14 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       if (!book) throw new BooksApiError("notfound", "Il libro non esiste più.");
       if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
       const dueDate = addDays(input.loanDate, input.plannedDays);
-      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, correctionCount: 0 });
+      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, voidedBy: null, correctionCount: 0 });
+      const vr = input.voidedRestore;
+      if (vr) {
+        const v = refresh({ ...l, voidedAt: "2026-10-15T10:00:00Z", voidReason: vr.reason, voidedBy: "admin" });
+        corrections = [{ id: `c-${corrections.length + 1}`, loanId: l.id, action: "annulla_prestito", reason: `Ripristinato da backup. Annullamento originale del ${vr.originalAt} da ${vr.originalBy}: ${vr.reason}`, correctedBy: "admin", correctedAt: "2026-10-15T10:00:00Z", before: { state: l.returnedDate ? "restituito" : "attivo", returnedDate: l.returnedDate, returnedBy: null, voided: false }, after: { state: "annullato", returnedDate: l.returnedDate, returnedBy: null, voided: true, restoredFrom: { at: vr.originalAt, by: vr.originalBy, reason: vr.reason } } }, ...corrections];
+        loans = [v, ...loans];
+        return nCorr(v);
+      }
       loans = [l, ...loans];
       return l;
     },
@@ -79,7 +86,7 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       const cur = loans.find((l) => l.id === id);
       if (!cur) throw new BooksApiError("notfound", "Prestito non trovato.");
       if (cur.voidedAt) throw new BooksApiError("conflict", "Questo prestito risulta già annullato.");
-      const after = refresh({ ...cur, voidedAt: "2026-10-15T10:00:00Z", voidReason: p.value.reason });
+      const after = refresh({ ...cur, voidedAt: "2026-10-15T10:00:00Z", voidReason: p.value.reason, voidedBy: "admin" });
       loans = loans.map((x) => (x.id === id ? after : x));
       corrections = [{ id: `c-${corrections.length + 1}`, loanId: id, action: "annulla_prestito", reason: p.value.reason, correctedBy: "admin", correctedAt: "2026-10-15T10:00:00Z", before: { state: cur.returnedDate ? "restituito" : "attivo", returnedDate: cur.returnedDate, returnedBy: null, voided: false }, after: { state: "annullato", returnedDate: cur.returnedDate, returnedBy: null, voided: true } }, ...corrections];
       return nCorr(after);
