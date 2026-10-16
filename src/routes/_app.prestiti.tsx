@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_app/prestiti")({
   component: Prestiti,
 });
 
-const STATES: [LoanStateFilter, string][] = [["attivi", "Attivi"], ["in ritardo", "In ritardo"], ["restituiti", "Restituiti"], ["tutti", "Tutti"]];
+const STATES: [LoanStateFilter, string][] = [["attivi", "Attivi"], ["in ritardo", "In ritardo"], ["restituiti", "Restituiti"], ["annullati", "Annullati (errori)"], ["tutti", "Tutti"]];
 
 function Prestiti() {
   const { isAdmin } = useAuth();
@@ -47,7 +47,7 @@ function Elenco() {
 
   return (
     <>
-      <PageHeader title="Prestiti" description="Prestiti in corso e storico. La registrazione di un prestito o di una restituzione si fa dalla scheda del libro." />
+      <PageHeader title="Prestiti" description="Prestiti in corso e storico. Per registrare un prestito, una restituzione o una correzione apri la scheda del libro (link «Gestisci»)." />
       <form role="search" aria-label="Filtri prestiti" onSubmit={(e) => e.preventDefault()} className="mb-6 grid gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <Label htmlFor="f-state">Stato</Label>
@@ -68,7 +68,7 @@ function Elenco() {
             <table className="w-full min-w-[46rem] text-left text-sm">
               <caption className="sr-only">Elenco dei prestiti</caption>
               <thead className="border-b text-muted-foreground">
-                <tr>{["Libro", "Destinatario", "Dal", "Previsto", "Restituito", "Durata", "Stato"].map((h) => <th key={h} scope="col" className="p-3 font-semibold">{h}</th>)}</tr>
+                <tr>{["Libro", "Destinatario", "Dal", "Previsto", "Restituito", "Durata", "Stato", "Azione"].map((h) => <th key={h} scope="col" className="p-3 font-semibold">{h}</th>)}</tr>
               </thead>
               <tbody>
                 {data.items.map((l) => (
@@ -80,6 +80,11 @@ function Elenco() {
                     <td className="p-3">{fmtDate(l.returnedDate)}</td>
                     <td className="p-3">{durationText(l)}</td>
                     <td className="p-3"><LoanPill value={l.state} /></td>
+                    <td className="p-3">
+                      <Link to="/catalogo/$id" params={{ id: l.bookId }} hash="prestiti" className="text-primary underline">
+                        {l.state === "in prestito" || l.state === "in ritardo" ? "Registra restituzione" : "Gestisci"}<span className="sr-only"> di {l.bookTitle}</span>
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

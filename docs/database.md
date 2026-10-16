@@ -46,3 +46,6 @@ Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa 
 
 ## Backup e ripristino (fase 4)
 Il JSON esportato (`format: bibliotheca-backup`, `version: 2`; la v1 resta leggibile) contiene tutte le schede, copie e prestiti; per le schede con tutti i campi, compresi MARC21 (ordine, ripetizioni, indicatori, sottocampi), soggetti e dati Dewey. Il ripristino (`src/lib/backup.ts`) valida ogni scheda con la stessa funzione del server, mostra anteprima e conflitti (stesso id, stesso ISBN, stesso titolo+primo autore, duplicati nel file), richiede conferma esplicita e **non cancella mai**: crea schede nuove o, per scelta dell'admin, aggiorna quelle esistenti. Scrive con le API normali (admin lato server). Le esportazioni CSV e MARC testuale non sono formati di interscambio MARC (non ISO 2709). Un ripristino non reimposta id né date originali delle schede create.
+
+## Correzioni dei prestiti (migrazione 0004)
+`loans.voided_at/voided_by/void_reason`: prestito annullato perché registrato per errore (resta nello storico). `loan_corrections`: traccia immutabile (azione `annulla_prestito` | `annulla_restituzione`, motivo, autore, data, `before_state`/`after_state` in JSON, `seq` per l'ordine). Gli indici univoci sui prestiti attivi ignorano i prestiti annullati. Ogni correzione aggiorna `loans` e scrive la traccia in una sola istruzione SQL (atomica).
