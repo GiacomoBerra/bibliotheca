@@ -34,8 +34,8 @@ Il database garantisce solo che sia un array. La **validità MARC21** (tag ammes
 ## Sincronizzazione tra campi semplici e MARC (regola attuale)
 - I campi bibliografici semplici (titolo, autori, …) sono la **fonte di verità** per l'interfaccia, la ricerca e la dashboard.
 - `marc_fields` è un contenitore **indipendente**: oggi non viene riempito né sovrascritto automaticamente e **nessun campo semplice è derivato da MARC**. Così non si perdono dati né si inventano mappature non verificate.
-- Mappature automatiche (es. 245$a ↔ titolo) saranno aggiunte solo dopo verifica sulla documentazione ufficiale, con anteprima e conferma prima di modificare qualsiasi dato.
-- La vista MARC della scheda resta **illustrativa e non validata**.
+- Il collegamento campi semplici → MARC è **esplicito, in un solo verso, con anteprima e conferma** (`src/lib/marc/fromBook.ts`, 7 tag; vedi `docs/marc21.md`). Nessuna sincronizzazione automatica: modificare una scheda non aggiorna il MARC e viceversa (rischio di disallineamento segnalato nell'audit, priorità media).
+- La validazione MARC copre la struttura (server) e 9 campi con regole verificate; non è correttezza catalografica.
 
 ## Sicurezza
 Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa di connessione di Netlify (`NETLIFY_DB_URL`), che non lascia mai il server. L'autorizzazione è nel codice del server, verificata dai test:
@@ -45,7 +45,7 @@ Non c'è RLS: il database è raggiunto solo dalla Function `api` con la stringa 
 - limiti di lunghezza anche nel database (CHECK).
 
 ## Backup e ripristino (fase 4)
-Il JSON esportato (`format: bibliotheca-backup`, `version: 2`; la v1 resta leggibile) contiene tutte le schede, copie e prestiti; per le schede con tutti i campi, compresi MARC21 (ordine, ripetizioni, indicatori, sottocampi), soggetti e dati Dewey. Il ripristino (`src/lib/backup.ts`) valida ogni scheda con la stessa funzione del server, mostra anteprima e conflitti (stesso id, stesso ISBN, stesso titolo+primo autore, duplicati nel file), richiede conferma esplicita e **non cancella mai**: crea schede nuove o, per scelta dell'admin, aggiorna quelle esistenti. Scrive con le API normali (admin lato server). Le esportazioni CSV e MARC testuale non sono formati di interscambio MARC (non ISO 2709). Un ripristino non reimposta id né date originali delle schede create.
+Il JSON esportato (`format: bibliotheca-backup`, `version: 3`; v1 e v2 restano leggibili) contiene tutte le schede, copie, prestiti (annullati compresi) e cronologia delle correzioni; per le schede con tutti i campi, compresi MARC21 (ordine, ripetizioni, indicatori, sottocampi), soggetti e dati Dewey. Il ripristino (`src/lib/backup.ts`) valida ogni scheda con la stessa funzione del server, mostra anteprima e conflitti (stesso id, stesso ISBN, stesso titolo+primo autore, duplicati nel file), richiede conferma esplicita e **non cancella mai**: crea schede nuove o, per scelta dell'admin, aggiorna quelle esistenti. Scrive con le API normali (admin lato server). Le esportazioni CSV e MARC testuale non sono formati di interscambio MARC (non ISO 2709). Un ripristino non reimposta id né date originali delle schede create.
 
 ## Correzioni dei prestiti (migrazione 0004)
 `loans.voided_at/voided_by/void_reason`: prestito annullato perché registrato per errore (resta nello storico). `loan_corrections`: traccia immutabile (azione `annulla_prestito` | `annulla_restituzione`, motivo, autore, data, `before_state`/`after_state` in JSON, `seq` per l'ordine). Gli indici univoci sui prestiti attivi ignorano i prestiti annullati. Ogni correzione aggiorna `loans` e scrive la traccia in una sola istruzione SQL (atomica).

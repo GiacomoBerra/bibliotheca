@@ -17,7 +17,7 @@ Architettura definitiva (decisione del proprietario): **solo Netlify** — Hosti
 | D10 | Test del DB con Postgres reale (PGlite e `@netlify/database-dev` con il driver `pg` di produzione) | Niente backend simulato come unica prova |
 
 | D11 | Ricerca su fonti esterne solo dal server (`/api/lookup`, solo admin), connettori indipendenti, cache e limiti | Nessuna chiave nel browser; consumi contenuti; vedi `docs/ricerca-bibliografica.md` |
-| D12 | Library of Congress non integrata | Endpoint libri non copre il catalogo; SRU non verificabile |
+| D12 | Library of Congress via SRU (connettore implementato; mai verificato con il servizio reale) | Endpoint JSON `loc.gov/books/` non adatto; SRU provato solo con risposte simulate |
 
 ## Variabili d'ambiente
 | Nome | Dove | Contenuto | Segreta? |
@@ -34,7 +34,7 @@ Nessuna variabile `VITE_*` è necessaria.
 - Backup/ripristino: snapshot via API/dashboard documentati; il loro costo e la loro disponibilità nel Free non sono confermati. Fino ad allora vale l'esportazione JSON/CSV periodica.
 - Le Deploy Preview del database copiano i dati di produzione (PII) e i link sono pubblici.
 
-## Test automatici (`npm test`: 192 test, passati)
+## Test automatici (`npm test`: vedi `docs/stato-progetto.md` → «Risultati dei test»)
 | Area | File | Cosa verifica |
 |---|---|---|
 | API su Postgres reale | `server/api.test.ts` (38) | 401 senza sessione su ogni rotta; identità e ruolo non falsificabili (parametri/body/header); catalogo condiviso tra due admin; viewer: sola lettura (403 su scrittura, cancellazione, export, lookup) e MARC leggibile; nessun ruolo/ruolo sconosciuto = 403; `/api/lookup` solo admin, senza scritture, 400/405/429/503; validazione; MARC ordinato/ripetuto; tentativi di SQL injection; ISBN con/senza trattini; paginazione/ordinamento/filtro; CSRF; 503 senza DB; errori 500 generici; persistenza dopo nuova sessione; sessione scaduta con refresh; errore di rete |

@@ -7,7 +7,7 @@ Stato: **implementata, testata con risposte simulate**. **Non** provata con i se
 |---|---|---|---|
 | Open Library | integrata | API ufficiali senza chiave: `/api/books` (con ISBN → una edizione) e `/search.json` (titolo/autore → livello opera) | 1 richiesta/s anonime, 3/s se identificati: l'app invia un User-Agent con contatto (variabile `LOOKUP_CONTACT`) e distanzia le richieste (≥ 400 ms). Niente download massivi né scraping |
 | Google Books | integrata | `volumes` | La documentazione ufficiale dice che servono chiave o token. Il connettore prova senza chiave; se Google rifiuta, la fonte risulta «non disponibile». Eventuale chiave gratuita in `GOOGLE_BOOKS_API_KEY` (solo server) |
-| Library of Congress | **non integrata** | — | L'endpoint JSON `loc.gov/books/` «non fornisce tutte le informazioni di catalogo» e non documenta la ricerca per ISBN; il catalogo completo si interroga via SRU/Z39.50, di cui non ho potuto verificare indirizzo, formato e condizioni d'uso. Si aggiunge scrivendo un nuovo connettore in `server/sources/` |
+| Library of Congress | connettore SRU implementato; **non verificato con il servizio reale** | `server/sources/` | L'endpoint JSON `loc.gov/books/` «non fornisce tutte le informazioni di catalogo» e non documenta la ricerca per ISBN; il catalogo completo si interroga via SRU/Z39.50, di cui non ho potuto verificare indirizzo, formato e condizioni d'uso. Si aggiunge scrivendo un nuovo connettore in `server/sources/` |
 
 Ogni fonte è un connettore indipendente (`server/sources/*.ts`, interfaccia `Source`); un errore o un timeout di una non blocca le altre.
 
