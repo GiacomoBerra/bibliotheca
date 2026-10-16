@@ -19,7 +19,7 @@ const readText = (f: File): Promise<string> =>
 
 type Loaded = Extract<ParsedBackup, { ok: true }>;
 type Mode = "json" | "csv" | "isbn";
-export interface BackupDone { books: number; loans: number; voided?: number; corrections?: number }
+export interface BackupDone { books: number; loans: number; voided?: number; corrections?: number; copies?: number }
 
 /**
  * Importazione/ripristino: da backup JSON, da CSV o da elenco di ISBN (ricerca nelle fonti). Flusso comune:
@@ -97,7 +97,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
   };
   const conflicts = plan.filter((p) => p.relation !== "nuova");
   const checks = plan.filter((p) => p.item.notes?.length);
-  const hasLoans = (loaded?.loans?.length ?? 0) > 0;
+  const hasLoans = (loaded?.loans?.length ?? 0) > 0 || !!loaded?.copies?.some((c) => c.copyNo > 1 || c.inventoryCode || c.notes);
   const loanBlock = (loaded?.loanIssues?.length ?? 0) > 0;
   const backupOk = existingCount === 0 || backup !== null;
 
@@ -110,13 +110,13 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
       let check: RestoreCheck | null = null;
       if (hasLoans && withLoans && !r.aborted) {
         setBusy("Controllo dei prestiti già presenti…");
-        lp = await planLoanRestore(api, loaded!.loans!, r.idMap);
+        lp = await planLoanRestore(api, loaded!.loans ?? [], r.idMap, loaded!.copies ?? []);
         setBusy(`Ripristino di ${lp.toCreate.length} prestiti e della loro cronologia…`);
         lr = await applyLoanRestore(api, lp);
         if (lr.failed.length === 0) {
           setBusy("Verifica finale: confronto con il file…");
           const skipped = new Set([...lp.differing, ...lp.blocked, ...lp.probableDuplicates].map((x) => x.label));
-          check = await verifyLoanRestore(api, loaded!.loans!, r.idMap, skipped);
+          check = await verifyLoanRestore(api, loaded!.loans ?? [], r.idMap, skipped, lp.copies.map((c) => ({ ...c, bookId: Object.keys(r.idMap).find((k) => r.idMap[k] === c.bookId) ?? c.bookId })));
         }
       }
       setResult({ books: r, loans: lr, plan: lp, check }); setLoaded(null); setPlan([]); setConfirm(false);
@@ -167,7 +167,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
         <section aria-label="Anteprima del ripristino" className="space-y-3">
           <p className="text-sm">
             Il file contiene <strong>{loaded.items.length + loaded.issues.length}</strong> schede{loaded.exportedAt ? ` (esportato il ${loaded.exportedAt.slice(0, 10)})` : ""}:
-            {" "}<strong>{loaded.items.length}</strong> valide, <strong>{loaded.issues.length}</strong> con errori (non verranno importate), <strong>{conflicts.length}</strong> in conflitto o duplicate{hasLoans ? <>; <strong>{loaded.loans!.length}</strong> prestiti nel file</> : null}.
+            {" "}<strong>{loaded.items.length}</strong> valide, <strong>{loaded.issues.length}</strong> con errori (non verranno importate), <strong>{conflicts.length}</strong> in conflitto o duplicate{hasLoans ? <>; <strong>{loaded.loans?.length ?? 0}</strong> prestiti e <strong>{loaded.copies?.length ?? 0}</strong> copie nel file</> : null}.
           </p>
           {loaded.warnings.map((w) => <p key={w} role="alert" className="text-sm text-destructive">{w}</p>)}
           {loaded.issues.length > 0 && (
@@ -212,7 +212,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
           {hasLoans && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" checked={withLoans && !loanBlock} disabled={loanBlock} onChange={(e) => setWithLoans(e.target.checked)} className="mt-1" />
-              <span>Ripristina anche i {loaded.loans!.length} prestiti del file con tutta la loro storia (restituzioni, prestiti annullati e correzioni, con autore, data e motivo originali). Si scrive tutto insieme o niente; i prestiti già presenti si riconoscono e si saltano; nulla viene sovrascritto. Solo per le schede create, aggiornate o riconosciute come già presenti.</span>
+              <span>Ripristina anche le copie fisiche e i {loaded.loans?.length ?? 0} prestiti del file con tutta la loro storia (restituzioni, prestiti annullati e correzioni, con autore, data e motivo originali). Si scrive tutto insieme o niente; i prestiti già presenti si riconoscono e si saltano; nulla viene sovrascritto. Solo per le schede create, aggiornate o riconosciute come già presenti.</span>
             </label>
           )}
           {!hasLoans && mode === "json" && loaded.version === 1 && <p className="text-sm text-muted-foreground">Questo backup non contiene prestiti.</p>}
@@ -225,7 +225,7 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
               <>
                 <p className="text-muted-foreground">Il catalogo contiene {existingCount} schede. Prima di importare scarica un backup completo (schede, copie e prestiti): il programma lo rilegge e ne controlla i conteggi.</p>
                 <Button type="button" variant="outline" size="sm" className="mt-2" disabled={busy !== null} onClick={() => void makeBackup()}>Scarica e verifica il backup attuale</Button>
-                {backup && <p role="status" className="mt-2">Backup scaricato e verificato: {backup.books} schede e {backup.loans} prestiti{backup.voided !== undefined ? ` (di cui ${backup.voided} annullati)` : ""}{backup.corrections !== undefined ? ` e ${backup.corrections} correzioni` : ""}. Conservalo fuori da questo browser.</p>}
+                {backup && <p role="status" className="mt-2">Backup scaricato e verificato: {backup.books} schede, {backup.copies ?? 0} copie e {backup.loans} prestiti{backup.voided !== undefined ? ` (di cui ${backup.voided} annullati)` : ""}{backup.corrections !== undefined ? ` e ${backup.corrections} correzioni` : ""}. Conservalo fuori da questo browser.</p>}
               </>
             )}
           </div>
@@ -246,13 +246,13 @@ export function ImportPanel({ onDownloadBackup }: { onDownloadBackup: () => Prom
           {result.books.failed.length > 0 && <ul className="list-disc pl-5 text-destructive">{result.books.failed.slice(0, 20).map((f) => <li key={f.index}>Scheda {f.index + 1} («{f.title}»): {f.message}</li>)}</ul>}
           {result.loans && (
             <>
-              <p role="status"><strong>{result.loans.created}</strong> prestiti ripristinati{result.loans.voidedCreated > 0 ? <> (di cui <strong>{result.loans.voidedCreated}</strong> annullati)</> : null} con <strong>{result.loans.corrections}</strong> correzioni di cronologia; <strong>{result.loans.duplicates}</strong> già presenti (saltati), <strong>{result.loans.noBook}</strong> non collegati a una scheda importata, <strong>{result.loans.differing}</strong> con dati diversi nel database (non sovrascritti), <strong>{result.loans.blocked}</strong> bloccati da un prestito in corso, <strong>{result.loans.failed.length}</strong> richieste non riuscite.</p>
+              <p role="status"><strong>{result.loans.created}</strong> prestiti ripristinati{result.loans.voidedCreated > 0 ? <> (di cui <strong>{result.loans.voidedCreated}</strong> annullati)</> : null} con <strong>{result.loans.corrections}</strong> correzioni di cronologia (<strong>{result.loans.copiesCreated}</strong> copie create); <strong>{result.loans.duplicates}</strong> già presenti (saltati), <strong>{result.loans.noBook}</strong> non collegati a una scheda importata, <strong>{result.loans.differing}</strong> con dati diversi nel database (non sovrascritti), <strong>{result.loans.blocked}</strong> bloccati da un prestito in corso, <strong>{result.loans.failed.length}</strong> richieste non riuscite.</p>
               {result.loans.failed.length > 0 && <ul className="list-disc pl-5 text-destructive">{result.loans.failed.slice(0, 20).map((f) => <li key={f.label}>{f.label}: {f.message}</li>)}</ul>}
               {result.plan && [...result.plan.differing, ...result.plan.blocked, ...result.plan.probableDuplicates].length > 0 && (
                 <ul className="list-disc pl-5">{[...result.plan.differing, ...result.plan.blocked, ...result.plan.probableDuplicates].slice(0, 20).map((x) => <li key={x.label + x.reason}>{x.label}: {x.reason}</li>)}</ul>
               )}
               {result.check && (result.check.mismatches.length === 0
-                ? <p role="status" className="font-medium">Verifica finale superata: {result.check.checked} prestiti riletti dal database coincidono con il file (dati, autori, date e cronologia delle correzioni).</p>
+                ? <p role="status" className="font-medium">Verifica finale superata: {result.check.checked} prestiti e {result.check.copiesChecked} copie riletti dal database coincidono con il file (dati, autori, date e cronologia delle correzioni).</p>
                 : <div role="alert" className="text-destructive"><p className="font-medium">Verifica finale NON superata: {result.check.mismatches.length} differenze tra il file e il database.</p><ul className="list-disc pl-5">{result.check.mismatches.slice(0, 20).map((m) => <li key={m}>{m}</li>)}</ul></div>)}
             </>
           )}

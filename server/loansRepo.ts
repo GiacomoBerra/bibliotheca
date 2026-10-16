@@ -1,4 +1,4 @@
-import { availabilityOf, daysBetween, isIsoDate, loanDerived, type BookLoans, type CorrectionAction, type Loan, type LoanCorrection, type LoanCorrectionState, type LoanEditInput, type LoanInput, type LoanListOptions, type LoanPage, type LoanRestoreRecord } from "../src/lib/api/loans";
+import { availabilityOf, daysBetween, isIsoDate, loanDerived, type BookLoans, type CorrectionAction, type Loan, type LoanCorrection, type LoanCorrectionState, type LoanEditInput, type LoanInput, type LoanListOptions, type LoanPage, type LoanRestoreRecord, RestoreCopy, RestoreResult } from "../src/lib/api/loans";
 import { escapeLike } from "../src/lib/api/mapping";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db";
@@ -78,11 +78,23 @@ export async function getLoan(db: Db, id: string, today: string): Promise<Loan |
 }
 
 /** Registra un prestito sulla copia n. 1 del libro (creata se manca). Rifiuta date incoerenti e prestiti già in corso. */
-export async function createLoan(db: Db, userId: string, bookId: string, input: LoanInput, today: string, copyNo = 1): Promise<Loan> {
+export async function createLoan(db: Db, userId: string, bookId: string, input: LoanInput, today: string, copyNoArg?: number): Promise<Loan> {
   if (!isUuid(bookId) || (await db.query(`select 1 from books where id = $1`, [bookId])).rows.length === 0) throw new LoanError(404, "not_found", "Il libro non esiste più: nessun prestito registrato.");
   if (input.loanDate > today) throw new LoanError(400, "validation", "La data del prestito non può essere futura.", { loanDate: "La data del prestito non può essere futura." });
 
   if (input.returnedDate && input.returnedDate > today) throw new LoanError(400, "validation", "La data di restituzione non può essere futura.", { returnedDate: "La data di restituzione non può essere futura." });
+  // Copia: quella richiesta (deve esistere, tranne la n. 1 che nasce al primo prestito) oppure la prima libera. Un prestito già concluso va sulla n. 1.
+  let copyNo = copyNoArg ?? input.copyNo;
+  const existing = (await db.query<{ copy_no: number; busy: boolean }>(
+    `select c.copy_no, exists (select 1 from loans l where l.copy_id = c.id and l.returned_date is null and l.voided_at is null) as busy from book_copies c where c.book_id = $1 order by c.copy_no`, [bookId])).rows;
+  if (copyNo === undefined) {
+    if (input.returnedDate || existing.length === 0) copyNo = 1;
+    else {
+      const free = existing.find((c) => !c.busy);
+      if (!free) throw new LoanError(409, "already_on_loan", existing.length > 1 ? "Tutte le copie risultano già in prestito: registra prima una restituzione. Nessun nuovo prestito è stato salvato." : "Questa copia risulta già in prestito: registra prima la restituzione. Nessun nuovo prestito è stato salvato.");
+      copyNo = Number(free.copy_no);
+    }
+  } else if (copyNo !== 1 && !existing.some((c) => Number(c.copy_no) === copyNo)) throw new LoanError(404, "not_found", `La copia n. ${copyNo} non esiste per questo libro.`);
   await db.query(`insert into book_copies (book_id, copy_no) values ($1, $2) on conflict (book_id, copy_no) do nothing`, [bookId, copyNo]);
   const copy = (await db.query<{ id: string }>(`select id from book_copies where book_id = $1 and copy_no = $2`, [bookId, copyNo])).rows[0];
   if (!copy) throw new LoanError(404, "not_found", "Copia non trovata.");
@@ -207,16 +219,21 @@ export async function listCorrections(db: Db, loanId: string): Promise<LoanCorre
  * un prestito con lo stesso identificativo già presente viene saltato (esecuzioni ripetute = nessun duplicato).
  * Le copie fisiche mancanti vengono create nella stessa istruzione.
  */
-export async function restoreLoans(db: Db, userId: string, records: LoanRestoreRecord[]): Promise<{ received: number; created: number; skipped: number; corrections: number }> {
+export async function restoreLoans(db: Db, userId: string, records: LoanRestoreRecord[], extraCopies: RestoreCopy[] = []): Promise<RestoreResult> {
   const payload = records.map((r) => ({ ...r, id: r.id ?? randomUUID() }));
   try {
-    const res = await db.query<{ loans: number | string; corrections: number | string }>(
+    const res = await db.query<{ loans: number | string; corrections: number | string; copies: number | string }>(
       `with src as (select e.value as r, e.ord as i from jsonb_array_elements($1::jsonb) with ordinality as e(value, ord)),
+            copy_src as (
+              select (r->>'bookId')::uuid as book_id, (r->>'copyNo')::int as copy_no, null::text as code, null::text as note from src
+              union all
+              select (x.value->>'bookId')::uuid, (x.value->>'copyNo')::int, nullif(x.value->>'inventoryCode', ''), nullif(x.value->>'notes', '') from jsonb_array_elements($3::jsonb) as x),
+            copy_agg as (select book_id, copy_no, max(code) as code, max(note) as note from copy_src group by book_id, copy_no),
             copies as (
-              insert into book_copies (book_id, copy_no)
-              select distinct (r->>'bookId')::uuid, (r->>'copyNo')::int from src
-              on conflict (book_id, copy_no) do update set copy_no = excluded.copy_no
-              returning id, book_id, copy_no),
+              insert into book_copies (book_id, copy_no, inventory_code, notes)
+              select book_id, copy_no, code, note from copy_agg
+              on conflict (book_id, copy_no) do update set inventory_code = coalesce(book_copies.inventory_code, excluded.inventory_code), notes = coalesce(book_copies.notes, excluded.notes)
+              returning id, book_id, copy_no, (xmax = 0) as inserted),
             ins as (
               insert into loans (id, book_id, copy_id, borrower_name, contact, loan_date, planned_days, due_date, notes, created_by, created_at,
                                  returned_date, returned_by, voided_at, voided_by, void_reason, restored_at, restored_by)
@@ -237,12 +254,13 @@ export async function restoreLoans(db: Db, userId: string, records: LoanRestoreR
               cross join lateral jsonb_array_elements(coalesce(s.r->'corrections', '[]'::jsonb)) with ordinality as k(value, kord)
               order by s.i, k.kord
               returning 1)
-       select (select count(*) from ins) as loans, (select count(*) from cor) as corrections`,
-      [JSON.stringify(payload), userId],
+       select (select count(*) from ins) as loans, (select count(*) from cor) as corrections, (select count(*) from copies where inserted) as copies`,
+      [JSON.stringify(payload), userId, JSON.stringify(extraCopies)],
     );
     const created = Number(res.rows[0]?.loans ?? 0);
-    return { received: records.length, created, skipped: records.length - created, corrections: Number(res.rows[0]?.corrections ?? 0) };
+    return { received: records.length, created, skipped: records.length - created, corrections: Number(res.rows[0]?.corrections ?? 0), copiesCreated: Number(res.rows[0]?.copies ?? 0) };
   } catch (e) {
+    if (pgCode(e) === "23505" && String((e as { constraint?: unknown }).constraint ?? "").includes("inventory_code")) throw new LoanError(409, "duplicate_code", "Un codice di inventario del file è già usato da un'altra copia nel database. Ripristino annullato: non è stato scritto nulla.");
     if (pgCode(e) === "23505") throw new LoanError(409, "already_on_loan", "Una copia del file risulta già in prestito nel database a un altro destinatario. Ripristino annullato: non è stato scritto nulla. Registra prima la restituzione del prestito in corso o escludi quel prestito.");
     if (pgCode(e) === "23503") throw new LoanError(404, "not_found", "Una delle schede indicate non esiste nel database. Ripristino annullato: non è stato scritto nulla.");
     if (pgCode(e) === "23514" || pgCode(e) === "22007" || pgCode(e) === "22008") throw new LoanError(400, "validation", "Il database ha rifiutato i dati di un prestito (vincolo non rispettato). Ripristino annullato: non è stato scritto nulla.");

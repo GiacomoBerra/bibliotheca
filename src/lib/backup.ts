@@ -1,6 +1,6 @@
 import { parseBookInput } from "./api/parse";
 import type { Book, BookInput, BooksApi } from "./api/types";
-import { addDays, isIsoDate, parseRestoreInput, type Loan, type LoanCorrection, type LoanCorrectionState, type LoanRestoreRecord, type RestoreCorrection } from "./api/loans";
+import { addDays, isIsoDate, parseRestoreInput, type Loan, type LoanCorrection, type LoanCorrectionState, type LoanRestoreRecord, type RestoreCopy, type RestoreCorrection } from "./api/loans";
 import { BACKUP_FORMAT, toBackupLoan, type BackupLoan } from "./export";
 
 /**
@@ -17,7 +17,7 @@ export interface RecordIssue { index: number; title: string; errors: string[] }
 export interface BackupItem { index: number; id?: string; input: BookInput; /** Cose da controllare (non bloccanti). */ notes?: string[] }
 export type ParsedBackup =
   | { ok: false; message: string }
-  | { ok: true; exportedAt?: string; declaredCount: number | null; items: BackupItem[]; issues: RecordIssue[]; warnings: string[]; version?: number; loans?: BackupLoan[]; loanIssues?: string[] };
+  | { ok: true; exportedAt?: string; declaredCount: number | null; items: BackupItem[]; issues: RecordIssue[]; warnings: string[]; version?: number; loans?: BackupLoan[]; loanIssues?: string[]; copies?: RestoreCopy[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -61,6 +61,17 @@ export function parseBackup(text: string): ParsedBackup {
     const declaredCorr = typeof o["correctionCount"] === "number" ? o["correctionCount"] : null;
     const gotCorr = loans.reduce((n, l) => n + (l.corrections?.length ?? 0), 0);
     if (o["version"] === 4 && declaredCorr !== null && declaredCorr !== gotCorr && loanIssues.length === 0) warnings.push(`Il file dichiara ${declaredCorr} correzioni ma ne contiene ${gotCorr}: potrebbe essere incompleto.`);
+  }
+  if (o["version"] >= 2 && Array.isArray(o["copies"])) {
+    const copies: RestoreCopy[] = [];
+    for (const c of o["copies"] as Record<string, unknown>[]) {
+      if (c && typeof c["bookId"] === "string" && typeof c["copyNo"] === "number" && Number.isInteger(c["copyNo"]) && c["copyNo"] >= 1) {
+        const code = typeof c["inventoryCode"] === "string" && c["inventoryCode"].trim() ? c["inventoryCode"].trim() : null;
+        copies.push({ bookId: c["bookId"], copyNo: c["copyNo"], inventoryCode: code, notes: typeof c["notes"] === "string" && c["notes"] ? c["notes"] : null });
+      }
+    }
+    out.copies = copies;
+    if (o["version"] === 4 && typeof o["copyCount"] === "number" && o["copyCount"] !== copies.length) warnings.push(`Il file dichiara ${o["copyCount"]} copie ma ne contiene ${copies.length}: potrebbe essere incompleto.`);
   }
   if (o["version"] === 2) warnings.push("Backup di versione 2: i prestiti annullati per errore e la cronologia delle correzioni non sono nel file.");
   if (o["version"] === 3) warnings.push("Backup di versione 3: contiene i prestiti annullati ma non la cronologia completa delle correzioni (es. restituzioni annullate); chi ha registrato i prestiti non è nel file.");
@@ -213,6 +224,8 @@ export interface LoanRestorePlan {
   blocked: LoanPlanProblem[];
   /** collegati a una scheda non importata/non corrispondente */
   noBook: number;
+  /** Copie del file (anche senza prestiti) sulle schede di destinazione: il server crea quelle mancanti e non sovrascrive mai codice o note già presenti. */
+  copies: RestoreCopy[];
 }
 export interface LoanRestoreResult {
   created: number;
@@ -220,6 +233,8 @@ export interface LoanRestoreResult {
   voidedCreated: number;
   /** correzioni di cronologia scritte */
   corrections: number;
+  /** copie fisiche create */
+  copiesCreated: number;
   duplicates: number;
   noBook: number;
   differing: number;
@@ -247,8 +262,8 @@ async function dbAsBackup(api: Pick<BooksApi, "listLoanCorrections">, l: Loan): 
  * PRIMA di scrivere qualsiasi cosa: confronta ogni prestito del file con quelli già presenti e decide cosa fare.
  * Nulla viene mai sovrascritto o cancellato. Ritorna anche ciò che NON si può ripristinare, con il motivo.
  */
-export async function planLoanRestore(api: Pick<BooksApi, "listBookLoans" | "listLoanCorrections">, loans: BackupLoan[], idMap: Record<string, string>): Promise<LoanRestorePlan> {
-  const plan: LoanRestorePlan = { toCreate: [], same: 0, probableDuplicates: [], differing: [], blocked: [], noBook: 0 };
+export async function planLoanRestore(api: Pick<BooksApi, "listBookLoans" | "listLoanCorrections">, loans: BackupLoan[], idMap: Record<string, string>, fileCopies: RestoreCopy[] = []): Promise<LoanRestorePlan> {
+  const plan: LoanRestorePlan = { toCreate: [], same: 0, probableDuplicates: [], differing: [], blocked: [], noBook: 0, copies: fileCopies.filter((c) => idMap[c.bookId]).map((c) => ({ ...c, bookId: idMap[c.bookId]! })) };
   const existing = new Map<string, Loan[]>();
   for (const l of loans) {
     const target = idMap[l.bookId];
@@ -279,30 +294,31 @@ export async function planLoanRestore(api: Pick<BooksApi, "listBookLoans" | "lis
  * cronologia o non cambia nulla. Se la richiesta fallisce, il database dei prestiti è esattamente com'era.
  */
 export async function applyLoanRestore(api: Pick<BooksApi, "restoreLoans">, plan: LoanRestorePlan): Promise<LoanRestoreResult> {
-  const res: LoanRestoreResult = { created: 0, voidedCreated: 0, corrections: 0, duplicates: plan.same + plan.probableDuplicates.length, noBook: plan.noBook, differing: plan.differing.length, blocked: plan.blocked.length, failed: [] };
-  if (plan.toCreate.length === 0) return res;
+  const res: LoanRestoreResult = { created: 0, voidedCreated: 0, corrections: 0, copiesCreated: 0, duplicates: plan.same + plan.probableDuplicates.length, noBook: plan.noBook, differing: plan.differing.length, blocked: plan.blocked.length, failed: [] };
+  if (plan.toCreate.length === 0 && plan.copies.length === 0) return res;
   try {
-    const r = await api.restoreLoans(plan.toCreate);
+    const r = await api.restoreLoans(plan.toCreate, plan.copies);
+    res.copiesCreated = r.copiesCreated;
     res.created = r.created;
     res.corrections = r.corrections;
     res.voidedCreated = r.created === plan.toCreate.length ? plan.toCreate.filter((x) => x.voided).length : 0;
     res.duplicates += r.skipped;
   } catch (e) {
-    res.failed.push({ label: `${plan.toCreate.length} prestiti`, message: `${e instanceof Error ? e.message : "Errore sconosciuto."} Nessun prestito è stato scritto.` });
+    res.failed.push({ label: `${plan.toCreate.length} prestiti e ${plan.copies.length} copie`, message: `${e instanceof Error ? e.message : "Errore sconosciuto."} Nessun prestito è stato scritto.` });
   }
   return res;
 }
 
-export interface RestoreCheck { checked: number; mismatches: string[] }
+export interface RestoreCheck { checked: number; /** copie fisiche confrontate */ copiesChecked: number; mismatches: string[] }
 /**
  * Verifica FINALE sul database reale: rilegge prestiti e correzioni e controlla che ogni prestito del file sia presente
  * con gli stessi dati e la stessa cronologia (per i file v4: identificativo, autori, date, motivi, stati prima/dopo).
  * Esclude, per costruzione, ciò che il piano ha saltato e dichiarato (differenze, blocchi, schede mancanti).
  */
-export async function verifyLoanRestore(api: Pick<BooksApi, "listLoans" | "listLoanCorrections">, loans: BackupLoan[], idMap: Record<string, string>, skipped: Set<string> = new Set()): Promise<RestoreCheck> {
+export async function verifyLoanRestore(api: Pick<BooksApi, "listLoans" | "listLoanCorrections"> & Partial<Pick<BooksApi, "listAllCopies">>, loans: BackupLoan[], idMap: Record<string, string>, skipped: Set<string> = new Set(), fileCopies: RestoreCopy[] = []): Promise<RestoreCheck> {
   const all = await listEveryLoan(api);
   const mismatches: string[] = [];
-  let checked = 0;
+  let checked = 0; let copiesChecked = 0;
   for (const l of loans) {
     const target = idMap[l.bookId];
     if (!target || skipped.has(labelOf(l))) continue;
@@ -312,7 +328,18 @@ export async function verifyLoanRestore(api: Pick<BooksApi, "listLoans" | "listL
     if (!found) { mismatches.push(`${labelOf(l)}: non è presente nel database.`); continue; }
     if (canonical(await dbAsBackup(api, found), isLegacy(l)) !== canonical(l, isLegacy(l))) mismatches.push(`${labelOf(l)}: dati o cronologia diversi dal file.`);
   }
-  return { checked, mismatches };
+  if (api.listAllCopies && fileCopies.length) {
+    const dbCopies = await api.listAllCopies();
+    for (const c of fileCopies) {
+      const target = idMap[c.bookId];
+      if (!target) continue;
+      copiesChecked++;
+      const found = dbCopies.find((x) => x.bookId === target && x.copyNo === c.copyNo);
+      if (!found) mismatches.push(`Copia n. ${c.copyNo} di una scheda: non è presente nel database.`);
+      else if (c.inventoryCode && found.inventoryCode?.toLowerCase() !== c.inventoryCode.toLowerCase()) mismatches.push(`Copia n. ${c.copyNo}: codice di inventario diverso dal file («${c.inventoryCode}» nel file, «${found.inventoryCode ?? "nessuno"}» nel database).`);
+    }
+  }
+  return { checked, copiesChecked, mismatches };
 }
 
 /**

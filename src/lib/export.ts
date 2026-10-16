@@ -1,4 +1,4 @@
-import type { CorrectionAction, Loan, LoanCorrection, LoanCorrectionState } from "./api/loans";
+import type { BookCopy, CorrectionAction, Loan, LoanCorrection, LoanCorrectionState } from "./api/loans";
 import type { Book } from "./api/types";
 import { toReadableText } from "./marc/structure";
 
@@ -41,14 +41,16 @@ export const toBackupLoan = (l: Loan, corrections: LoanCorrection[] = []): Backu
  * con `copies` e, per ogni prestito (annullati compresi), la sua cronologia di correzioni. Le copie fisiche sono
  * elencate dai prestiti: oggi una copia esiste solo dopo il primo prestito. Non è un file MARC interoperabile.
  */
-export function booksToJson(books: Book[], now = new Date(), loans?: Loan[], corrections: { loan: Loan; items: LoanCorrection[] }[] = []): string {
+export function booksToJson(books: Book[], now = new Date(), loans?: Loan[], corrections: { loan: Loan; items: LoanCorrection[] }[] = [], allCopies?: BookCopy[]): string {
   if (!loans) return JSON.stringify({ format: BACKUP_FORMAT, version: 1, exportedAt: now.toISOString(), count: books.length, books }, null, 2);
-  const copies = [...new Map(loans.map((l) => [`${l.bookId}#${l.copyNo}`, { bookId: l.bookId, copyNo: l.copyNo }])).values()];
+  // Copie: quelle del database (con codice e note) se fornite; altrimenti solo quelle che hanno prestiti.
+  const fromDb = (allCopies ?? []).filter((c) => c.id !== null).map((c) => ({ bookId: c.bookId, copyNo: c.copyNo, inventoryCode: c.inventoryCode, notes: c.notes }));
+  const copies = allCopies ? fromDb : [...new Map(loans.map((l) => [`${l.bookId}#${l.copyNo}`, { bookId: l.bookId, copyNo: l.copyNo }])).values()];
   const byLoan = new Map(corrections.map((c) => [c.loan.id, c.items]));
   const out = loans.map((l) => toBackupLoan(l, byLoan.get(l.id) ?? []));
   return JSON.stringify({
     format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length,
-    loanCount: out.length, voidedLoanCount: out.filter((l) => l.voided).length, correctionCount: out.reduce((n, l) => n + (l.corrections?.length ?? 0), 0),
+    copyCount: copies.length, loanCount: out.length, voidedLoanCount: out.filter((l) => l.voided).length, correctionCount: out.reduce((n, l) => n + (l.corrections?.length ?? 0), 0),
     books, copies, loans: out,
   }, null, 2);
 }

@@ -27,19 +27,20 @@ function Impostazioni() {
   const [done, setDone] = useState<string | null>(null);
 
   /** Backup JSON completo (schede, copie, prestiti e storico): lo rilegge prima di salvarlo e controlla i conteggi. */
-  async function makeBackup(): Promise<{ books: number; loans: number; voided: number; corrections: number }> {
+  async function makeBackup(): Promise<{ books: number; loans: number; voided: number; corrections: number; copies: number }> {
     const books = await api.listAllBooks();
     const loans = await listEveryLoan(api);
     const corrections = await listEveryCorrection(api, loans);
     const correctionTotal = corrections.reduce((n, c) => n + c.items.length, 0);
     const voided = loans.filter((l) => l.voidedAt).length;
-    const text = booksToJson(books, new Date(), loans, corrections);
+    const copies = await api.listAllCopies();
+    const text = booksToJson(books, new Date(), loans, corrections, copies);
     const back = parseBackup(text);
-    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0 || (back.loans?.filter((l) => l.voided).length ?? -1) !== voided || (back.loans?.reduce((n, l) => n + (l.corrections?.length ?? 0), 0) ?? -1) !== correctionTotal) {
+    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0 || (back.copies?.length ?? -1) !== copies.length || (back.loans?.filter((l) => l.voided).length ?? -1) !== voided || (back.loans?.reduce((n, l) => n + (l.corrections?.length ?? 0), 0) ?? -1) !== correctionTotal) {
       throw new Error("Il backup generato non supera il controllo di rilettura: non è stato salvato. Riprova; se il problema continua, non importare nulla.");
     }
     downloadText(`bibliotheca-backup-${new Date().toISOString().slice(0, 10)}.json`, text, "application/json");
-    return { books: books.length, loans: loans.length, voided, corrections: correctionTotal };
+    return { books: books.length, loans: loans.length, voided, corrections: correctionTotal, copies: copies.length };
   }
 
   async function run(kind: "json" | "csv" | "marc") {
@@ -49,7 +50,7 @@ function Impostazioni() {
     try {
       if (kind === "json") {
         const b = await makeBackup();
-        setDone(`Backup salvato e verificato: ${b.books} schede e ${b.loans} prestiti (di cui ${b.voided} annullati) e ${b.corrections} correzioni di cronologia.`);
+        setDone(`Backup salvato e verificato: ${b.books} schede e ${b.copies ?? 0} copie e ${b.loans} prestiti (di cui ${b.voided} annullati) e ${b.corrections} correzioni di cronologia.`);
         return;
       }
       const books = await api.listAllBooks();

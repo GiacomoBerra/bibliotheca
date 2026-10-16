@@ -42,7 +42,7 @@ describe("Ripristino da backup (interfaccia)", () => {
     expect(go).toBeDisabled(); // serve la conferma esplicita
     expect(screen.getByRole("checkbox", { name: /confermo il ripristino/ })).toBeDisabled(); // serve prima il backup verificato
     await user.click(screen.getByRole("button", { name: "Scarica e verifica il backup attuale" }));
-    expect(await screen.findByText(/Backup scaricato e verificato: 1 schede e 0 prestiti/)).toBeInTheDocument();
+    expect(await screen.findByText(/Backup scaricato e verificato: 1 schede, 1 copie e 0 prestiti/)).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
     await user.click(go);
     const out = await screen.findByRole("region", { name: "Esito del ripristino" });
@@ -100,12 +100,12 @@ describe("Ripristino da backup (interfaccia)", () => {
       { bookId: bid, bookTitle: "Con prestiti", copyNo: 1, borrower: "Bruno", contact: "", notes: "", loanDate: "2026-10-01", plannedDays: 30, dueDate: "2026-10-31", returnedDate: null },
     ] });
     await user.upload(await screen.findByLabelText("File di backup (.json)"), file(text));
-    expect(await screen.findByRole("region", { name: "Anteprima del ripristino" })).toHaveTextContent(/2 prestiti nel file/);
+    expect(await screen.findByRole("region", { name: "Anteprima del ripristino" })).toHaveTextContent(/2 prestiti e 1 copie nel file/);
     await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
     await user.click(screen.getByRole("button", { name: "Ripristina" }));
     const out = await screen.findByRole("region", { name: "Esito del ripristino" });
-    expect(out).toHaveTextContent(/2 prestiti ripristinati con 0 correzioni di cronologia; 0 già presenti/);
-    expect(out).toHaveTextContent(/Verifica finale superata: 2 prestiti/);
+    expect(out).toHaveTextContent(/2 prestiti ripristinati con 0 correzioni di cronologia \(0 copie create\); 0 già presenti/);
+    expect(out).toHaveTextContent(/Verifica finale superata: 2 prestiti e 1 copie/);
     expect(api.allLoans().map((l) => [l.borrower, l.returnedDate])).toEqual(expect.arrayContaining([["Anna", "2026-08-12"], ["Bruno", null]]));
     expect(api.allLoans()).toHaveLength(2);
   });

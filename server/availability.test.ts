@@ -75,7 +75,7 @@ describe("Stato prestito nel catalogo (Postgres reale)", () => {
   it("6: più copie fisiche — conteggio, disponibilità parziale, ritardo di una sola copia, tutte fuori", async () => {
     const id = await newBook("Due copie");
     const three = await newBook("Tre copie");
-    await raw.query(`insert into book_copies (book_id, copy_no) values ($1, 2), ($2, 1), ($2, 2), ($2, 3)`, [id, three]);
+    await raw.query(`insert into book_copies (book_id, copy_no) values ($1, 2), ($2, 2), ($2, 3)`, [id, three]);
     expect(await avail(id)).toEqual({ state: "disponibile", totalCopies: 2, availableCopies: 2 });
     const a = await loansRepo.createLoan(db, ADMIN, id, input("A", "2026-10-10", 30), TODAY, 1);
     expect(await avail(id)).toEqual({ state: "disponibilità parziale", totalCopies: 2, availableCopies: 1 });
@@ -123,7 +123,7 @@ describe("Stato prestito nel catalogo (Postgres reale)", () => {
     const d = await mk("alfa"), p = await mk("beta"), r = await mk("gamma"), par = await mk("delta"), d2 = await mk("epsilon");
     await lend(p, { loanDate: "2026-10-10", plannedDays: 30 });
     await lend(r, { loanDate: "2026-09-01", plannedDays: 5 });
-    await raw.query(`insert into book_copies (book_id, copy_no) values ($1, 1), ($1, 2)`, [par]);
+    await raw.query(`insert into book_copies (book_id, copy_no) values ($1, 2)`, [par]);
     await loansRepo.createLoan(db, ADMIN, par, input("P", "2026-10-10", 30), TODAY, 1);
     const ids = async (q: string) => (await admin("GET", `/api/books?${q}&query=Filtro&pageSize=100`)).json.items.map((b: any) => b.id).sort();
     expect(await ids("loan=tutti")).toEqual([d, p, r, par, d2].sort());

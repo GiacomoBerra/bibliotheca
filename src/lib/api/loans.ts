@@ -78,7 +78,33 @@ export interface LoanCorrection {
 /** `returnedDate`: solo per registrare un prestito già concluso (ripristino di backup o inserimento a posteriori). */
 export interface LoanInput {
   borrower: string; contact: string; loanDate: string; plannedDays: number; notes: string; returnedDate?: string | null;
+  /** Copia fisica prestata. Se manca, il server sceglie la prima copia libera (o la n. 1). */
+  copyNo?: number;
 }
+/** Una copia fisica di un libro. `state` è derivato dai prestiti (mai memorizzato); nessun dato personale. */
+export interface BookCopy {
+  /** null per la copia n. 1 di un libro mai prestato e senza dati propri: esiste solo in senso logico finché non serve. */
+  id: string | null;
+  bookId: string;
+  copyNo: number;
+  inventoryCode: string | null;
+  notes: string | null;
+  state: "disponibile" | "in prestito" | "in ritardo";
+  /** Data prevista di restituzione della copia se in prestito (non personale). */
+  dueDate: string | null;
+}
+export interface CopyInput { inventoryCode: string; notes: string }
+export const COPY_LIMITS = { code: 50, notes: 500, max: 999 } as const;
+export function parseCopyInput(raw: unknown): Parsed<CopyInput> {
+  const o = (raw && typeof raw === "object" ? raw : {}) as { inventoryCode?: unknown; notes?: unknown };
+  const code = str(o.inventoryCode), notes = str(o.notes);
+  const errors: FieldErrors = {};
+  if (code === null || code.length > COPY_LIMITS.code) errors["inventoryCode"] = `Il codice di inventario può avere al massimo ${COPY_LIMITS.code} caratteri.`;
+  if (notes === null || notes.length > COPY_LIMITS.notes) errors["notes"] = `Le note possono avere al massimo ${COPY_LIMITS.notes} caratteri.`;
+  if (Object.keys(errors).length) return { ok: false, errors };
+  return { ok: true, value: { inventoryCode: code!, notes: notes! } };
+}
+
 export interface LoanEditInput { borrower: string; contact: string; plannedDays: number; notes: string }
 
 export type LoanStateFilter = "attivi" | "in ritardo" | "restituiti" | "annullati" | "tutti";
@@ -127,7 +153,7 @@ export function availabilityOf(loans: Pick<Loan, "state">[]): Availability {
 }
 
 export type FieldErrors = Record<string, string>;
-interface RawLoan { borrower?: unknown; contact?: unknown; notes?: unknown; loanDate?: unknown; plannedDays?: unknown; returnedDate?: unknown }
+interface RawLoan { copyNo?: unknown; borrower?: unknown; contact?: unknown; notes?: unknown; loanDate?: unknown; plannedDays?: unknown; returnedDate?: unknown }
 type Parsed<T> = { ok: true; value: T } | { ok: false; errors: FieldErrors };
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : v == null ? "" : null);
 
@@ -146,16 +172,18 @@ export function parseLoanInput(raw: unknown): Parsed<LoanInput> {
   const ret = o.returnedDate == null || o.returnedDate === "" ? null : o.returnedDate;
   if (ret !== null && !isIsoDate(ret)) errors["returnedDate"] = "La data di restituzione non è valida (formato AAAA-MM-GG).";
   else if (ret !== null && isIsoDate(o.loanDate) && ret < o.loanDate) errors["returnedDate"] = "La restituzione non può precedere l'inizio del prestito.";
+  if (o.copyNo != null && (typeof o.copyNo !== "number" || !Number.isInteger(o.copyNo) || o.copyNo < 1 || o.copyNo > COPY_LIMITS.max)) errors["copyNo"] = "Il numero di copia non è valido.";
   if (Object.keys(errors).length) return { ok: false, errors };
-  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes!, ...(ret !== null ? { returnedDate: ret as string } : {}) } };
+  return { ok: true, value: { borrower: borrower!, contact: contact!, loanDate: o.loanDate as string, plannedDays: days as number, notes: notes!, ...(ret !== null ? { returnedDate: ret as string } : {}), ...(typeof o.copyNo === "number" ? { copyNo: o.copyNo } : {}) } };
 }
 
 export function parseLoanEdit(raw: unknown): Parsed<LoanEditInput> {
   const o = (raw && typeof raw === "object" ? raw : {}) as RawLoan;
   const r = parseLoanInput({ ...o, loanDate: "2000-01-01" }); // la data di inizio non è modificabile
   if (!r.ok) return r;
-  const { loanDate: _unused, returnedDate: _r, ...value } = r.value;
+  const { loanDate: _unused, returnedDate: _r, copyNo: _c, ...value } = r.value;
   void _r;
+  void _c;
   void _unused;
   return { ok: true, value };
 }
@@ -210,6 +238,9 @@ export interface LoanRestoreRecord {
 }
 export interface RestoreCorrection { action: CorrectionAction; reason: string; correctedBy: string; correctedAt: string; before: LoanCorrectionState; after: LoanCorrectionState }
 
+/** Una copia fisica da ripristinare (anche senza prestiti). */
+export interface RestoreCopy { bookId: string; copyNo: number; inventoryCode?: string | null; notes?: string | null }
+export interface RestoreResult { received: number; created: number; skipped: number; corrections: number; copiesCreated: number }
 export const RESTORE_MAX_LOANS = 3000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isStamp = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v)) && isIsoDate(v.slice(0, 10));
@@ -257,10 +288,22 @@ export function checkLoanHistory(r: LoanRestoreRecord): string | null {
 }
 
 /** Valida l'elenco inviato al ripristino. Un solo errore blocca TUTTO: nulla viene scritto. */
-export function parseRestoreInput(raw: unknown): { ok: true; value: LoanRestoreRecord[] } | { ok: false; message: string } {
+export function parseRestoreInput(raw: unknown): { ok: true; value: LoanRestoreRecord[]; copies: RestoreCopy[] } | { ok: false; message: string } {
   const list = (raw && typeof raw === "object" ? (raw as { loans?: unknown }).loans : null);
   if (!Array.isArray(list)) return { ok: false, message: "Manca l'elenco «loans»." };
-  if (list.length === 0) return { ok: false, message: "L'elenco dei prestiti da ripristinare è vuoto." };
+  const rawCopies = (raw as { copies?: unknown }).copies ?? [];
+  const copies: RestoreCopy[] = [];
+  if (!Array.isArray(rawCopies) || rawCopies.length > 5000) return { ok: false, message: "Elenco delle copie non valido." };
+  for (const [i, x] of rawCopies.entries()) {
+    const c = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+    if (typeof c["bookId"] !== "string" || !UUID_RE.test(c["bookId"]) || typeof c["copyNo"] !== "number" || !Number.isInteger(c["copyNo"]) || c["copyNo"] < 1 || c["copyNo"] > COPY_LIMITS.max) return { ok: false, message: `Copia ${i + 1}: scheda o numero di copia non validi.` };
+    const code = c["inventoryCode"] == null || c["inventoryCode"] === "" ? null : c["inventoryCode"], note = c["notes"] == null || c["notes"] === "" ? null : c["notes"];
+    if ((code !== null && (typeof code !== "string" || code.trim().length === 0 || code.length > COPY_LIMITS.code)) || (note !== null && (typeof note !== "string" || note.length > COPY_LIMITS.notes))) return { ok: false, message: `Copia ${i + 1}: codice di inventario o note non validi.` };
+    copies.push({ bookId: c["bookId"].toLowerCase(), copyNo: c["copyNo"], inventoryCode: code === null ? null : (code as string).trim(), notes: note as string | null });
+  }
+  const codes = copies.map((c) => c.inventoryCode?.toLowerCase()).filter((c): c is string => !!c);
+  if (new Set(codes).size !== codes.length) return { ok: false, message: "Due copie del file hanno lo stesso codice di inventario." };
+  if (list.length === 0 && copies.length === 0) return { ok: false, message: "Non c'è nulla da ripristinare: né prestiti né copie." };
   if (list.length > RESTORE_MAX_LOANS) return { ok: false, message: `Troppi prestiti in una volta (${list.length}; massimo ${RESTORE_MAX_LOANS}).` };
   const out: LoanRestoreRecord[] = [];
   const ids = new Set<string>();
@@ -318,5 +361,5 @@ export function parseRestoreInput(raw: unknown): { ok: true; value: LoanRestoreR
   // Due prestiti attivi sulla stessa copia nello stesso file sono incoerenti.
   const active = new Set<string>();
   for (const r of out) if (r.returnedDate === null && !r.voided) { const k = `${r.bookId}#${r.copyNo}`; if (active.has(k)) return { ok: false, message: `Due prestiti attivi sulla stessa copia (n. ${r.copyNo}) nello stesso file: il ripristino è stato rifiutato.` }; active.add(k); }
-  return { ok: true, value: out };
+  return { ok: true, value: out, copies };
 }

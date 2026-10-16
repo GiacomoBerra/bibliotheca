@@ -1,4 +1,4 @@
-import type { BookAvailability, BookLoans, Loan, LoanFilter, LoanCorrection, LoanEditInput, LoanInput, LoanListOptions, LoanPage, LoanRestoreRecord } from "./loans";
+import type { BookAvailability, BookLoans, Loan, LoanFilter, LoanCorrection, LoanEditInput, LoanInput, LoanListOptions, LoanPage, LoanRestoreRecord, BookCopy, CopyInput, RestoreCopy, RestoreResult } from "./loans";
 import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
 
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
@@ -97,8 +97,14 @@ export interface BooksApi {
   updateLoan(loanId: string, input: LoanEditInput): Promise<Loan>;
   /** Annulla un prestito registrato per errore (resta nello storico, con motivo e traccia). Solo admin. */
   voidLoan(loanId: string, reason: string): Promise<Loan>;
+  /** Copie fisiche di un libro (anche il visualizzatore, senza dati personali). */
+  listCopies(bookId: string): Promise<BookCopy[]>;
+  /** Tutte le copie (solo admin; per il backup). */
+  listAllCopies(): Promise<BookCopy[]>;
+  addCopy(bookId: string, input: CopyInput): Promise<BookCopy>;
+  updateCopy(copyId: string, input: CopyInput): Promise<BookCopy>;
   /** Ripristina da un backup prestiti e cronologia, tutto o niente (solo admin). */
-  restoreLoans(loans: LoanRestoreRecord[]): Promise<{ received: number; created: number; skipped: number; corrections: number }>;
+  restoreLoans(loans: LoanRestoreRecord[], copies?: RestoreCopy[]): Promise<RestoreResult>;
   /** Annulla la registrazione di una restituzione: il prestito torna attivo, se la copia non è stata prestata di nuovo. Solo admin. */
   undoLoanReturn(loanId: string, reason: string): Promise<Loan>;
   /** Traccia delle correzioni di un prestito, dalla più recente. Solo admin. */

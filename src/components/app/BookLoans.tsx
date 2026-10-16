@@ -1,27 +1,31 @@
 import { useState } from "react";
-import { HandHelping, Undo2 } from "lucide-react";
+import { HandHelping, Library, Undo2 } from "lucide-react";
 import { ErrorBox, Loading } from "@/components/app/common";
 import { LoanPill, durationText, fmtDate } from "@/components/app/LoanBits";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
-import { LOAN_LIMITS, REASON_LIMITS, addDays, daysBetween, isIsoDate, todayIso, type Loan } from "@/lib/api/loans";
+import { COPY_LIMITS, LOAN_LIMITS, REASON_LIMITS, addDays, daysBetween, isIsoDate, todayIso, type BookCopy, type Loan } from "@/lib/api/loans";
 import { useAsync } from "@/lib/useAsync";
 
-type Panel = null | "new" | "return" | { kind: "void" | "undo"; loan: Loan };
+type Panel = null | "new" | { kind: "return" | "void" | "undo"; loan: Loan };
+const copyName = (c: { copyNo: number; inventoryCode?: string | null }) => `copia n. ${c.copyNo}${c.inventoryCode ? ` (${c.inventoryCode})` : ""}`;
 const when = (iso: string) => `${fmtDate(iso.slice(0, 10))} ${iso.slice(11, 16)}`;
 
 /** Scheda «Prestiti» del dettaglio libro. L'admin gestisce; il visualizzatore vede stato e date, senza dati personali. */
 export function BookLoans({ bookId, bookTitle, isAdmin }: { bookId: string; bookTitle: string; isAdmin: boolean }) {
   const api = useBooksApi();
-  const { data, error, loading, reload } = useAsync(() => api.listBookLoans(bookId), [api, bookId]);
+  const { data, error, loading, reload } = useAsync(async () => { const [h, copies] = await Promise.all([api.listBookLoans(bookId), api.listCopies(bookId)]); return { ...h, copies }; }, [api, bookId]);
   const [msg, setMsg] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const done = (m: string) => { setMsg(m); setPanel(null); reload(); };
 
   const live = data?.loans.filter((l) => !l.voidedAt) ?? [];
-  const active = live.find((l) => l.returnedDate === null);
+  const actives = live.filter((l) => l.returnedDate === null);
+  const copies = data?.copies ?? [];
+  const multi = copies.length > 1;
+  const free = copies.filter((c) => c.state === "disponibile");
 
   return (
     <section aria-labelledby="prestiti" id="prestiti-sezione" className="mt-8 rounded-lg border bg-card p-6">
@@ -32,16 +36,14 @@ export function BookLoans({ bookId, bookTitle, isAdmin }: { bookId: string; book
       {msg && <p role="status" className="mb-4 text-sm">{msg}</p>}
       {error ? <ErrorBox message={error} onRetry={reload} /> : loading && !data ? <Loading label="Caricamento prestiti…" /> : data && (
         <>
-          {isAdmin && (
-            active
-              ? <ActivePanel loan={active} panel={panel} setPanel={setPanel} bookTitle={bookTitle} onDone={done} />
-              : <AvailablePanel panel={panel} setPanel={setPanel} bookId={bookId} bookTitle={bookTitle} onDone={done} />
-          )}
-          {isAdmin && typeof panel === "object" && panel && (
+          <CopiesPanel bookId={bookId} copies={copies} isAdmin={isAdmin} onChanged={(m) => done(m)} />
+          {isAdmin && actives.map((a) => <div key={a.id} className="mb-3"><ActivePanel loan={a} multi={multi} panel={panel} setPanel={setPanel} bookTitle={bookTitle} onDone={done} /></div>)}
+          {isAdmin && free.length > 0 && <AvailablePanel panel={panel} setPanel={setPanel} bookId={bookId} bookTitle={bookTitle} free={free} multi={multi} onDone={done} />}
+          {isAdmin && typeof panel === "object" && panel && panel.kind !== "return" && (
             <CorrectionPanel key={`${panel.kind}-${panel.loan.id}`} kind={panel.kind} loan={panel.loan} bookTitle={bookTitle} onCancel={() => setPanel(null)} onDone={done} />
           )}
           {!isAdmin && (
-            <p className="text-sm">{data.availability === "disponibile" ? "Il libro è disponibile." : "Il libro è attualmente in prestito."}</p>
+            <p className="text-sm">{multi ? `${free.length} di ${copies.length} copie disponibili.` : data.availability === "disponibile" ? "Il libro è disponibile." : "Il libro è attualmente in prestito."}</p>
           )}
           <h3 className="mb-2 mt-6 text-lg font-semibold">Storico dei prestiti</h3>
           {!isAdmin && <p className="mb-2 text-xs text-muted-foreground">Per la privacy, nome e recapiti di chi ha preso in prestito il libro sono visibili solo agli amministratori.</p>}
@@ -50,13 +52,14 @@ export function BookLoans({ bookId, bookTitle, isAdmin }: { bookId: string; book
               <table className="w-full min-w-[40rem] text-left text-sm">
                 <caption className="sr-only">Storico dei prestiti, dal più recente</caption>
                 <thead className="border-b text-muted-foreground">
-                  <tr>{["Destinatario", "Dal", "Previsto", "Restituito", "Durata", "Stato"].map((h) => <th key={h} scope="col" className="py-2 pr-3 font-semibold">{h}</th>)}{isAdmin && <th scope="col" className="py-2 font-semibold">Correzioni</th>}</tr>
+                  <tr>{[...(multi ? ["Copia"] : []), "Destinatario", "Dal", "Previsto", "Restituito", "Durata", "Stato"].map((h) => <th key={h} scope="col" className="py-2 pr-3 font-semibold">{h}</th>)}{isAdmin && <th scope="col" className="py-2 font-semibold">Correzioni</th>}</tr>
                 </thead>
                 <tbody>
                   {data.loans.map((l) => {
                     const hasLater = live.some((x) => x.id !== l.id && x.loanDate >= l.loanDate);
                     return (
                       <tr key={l.id} className="border-b last:border-0 align-top">
+                        {multi && <td className="py-2 pr-3">n. {l.copyNo}</td>}
                         <td className="py-2 pr-3">
                           {l.borrower ?? <span className="text-muted-foreground">riservato</span>}
                           {l.contact && <span className="block text-xs text-muted-foreground">{l.contact}</span>}
@@ -94,18 +97,18 @@ export function BookLoans({ bookId, bookTitle, isAdmin }: { bookId: string; book
   );
 }
 
-function AvailablePanel({ panel, setPanel, bookId, bookTitle, onDone }: { panel: Panel; setPanel: (p: Panel) => void; bookId: string; bookTitle: string; onDone: (m: string) => void }) {
+function AvailablePanel({ panel, setPanel, bookId, bookTitle, free, multi, onDone }: { panel: Panel; setPanel: (p: Panel) => void; bookId: string; bookTitle: string; free: BookCopy[]; multi: boolean; onDone: (m: string) => void }) {
   return (
     <div className="space-y-3 rounded-md border bg-background p-4">
-      <p className="text-lg font-semibold">Libro disponibile</p>
+      <p className="text-lg font-semibold">{multi ? `Copie disponibili: ${free.map((c) => `n. ${c.copyNo}`).join(", ")}` : "Libro disponibile"}</p>
       {panel === "new"
-        ? <NewLoanFlow bookId={bookId} bookTitle={bookTitle} onCancel={() => setPanel(null)} onDone={onDone} />
+        ? <NewLoanFlow bookId={bookId} bookTitle={bookTitle} free={free} multi={multi} onCancel={() => setPanel(null)} onDone={onDone} />
         : <Button type="button" onClick={() => setPanel("new")}><HandHelping aria-hidden /> Registra prestito</Button>}
     </div>
   );
 }
 
-function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; bookTitle: string; onCancel: () => void; onDone: (msg: string) => void }) {
+function NewLoanFlow({ bookId, bookTitle, free, multi, onCancel, onDone }: { bookId: string; bookTitle: string; free: BookCopy[]; multi: boolean; onCancel: () => void; onDone: (msg: string) => void }) {
   const api = useBooksApi();
   const today = todayIso();
   const [borrower, setBorrower] = useState("");
@@ -114,6 +117,7 @@ function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; 
   const [days, setDays] = useState(String(LOAN_LIMITS.defaultDays));
   const [due, setDue] = useState(addDays(today, LOAN_LIMITS.defaultDays));
   const [notes, setNotes] = useState("");
+  const [copyNo, setCopyNo] = useState(String(free[0]?.copyNo ?? 1));
   const [step, setStep] = useState<"form" | "review">("form");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -136,7 +140,7 @@ function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; 
     setErr(null);
     setBusy(true);
     try {
-      await api.createLoan(bookId, { borrower, contact, loanDate, plannedDays: n, notes });
+      await api.createLoan(bookId, { borrower, contact, loanDate, plannedDays: n, notes, ...(multi ? { copyNo: Number(copyNo) } : {}) });
       onDone(`Prestito registrato a ${borrower.trim()}.`);
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "Prestito non registrato.");
@@ -150,7 +154,7 @@ function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; 
       <div className="space-y-3" role="group" aria-label="Verifica del prestito">
         <h3 className="text-lg font-semibold">Verifica i dati del prestito</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="text-muted-foreground">Libro</dt><dd>{bookTitle}</dd>
+          <dt className="text-muted-foreground">Libro</dt><dd>{bookTitle}{multi && `, ${copyName(free.find((c) => c.copyNo === Number(copyNo)) ?? { copyNo: Number(copyNo) })}`}</dd>
           <dt className="text-muted-foreground">Destinatario</dt><dd>{borrower.trim()}{contact.trim() && <span className="block text-xs text-muted-foreground">{contact.trim()}</span>}</dd>
           <dt className="text-muted-foreground">Data del prestito</dt><dd>{fmtDate(loanDate)}</dd>
           <dt className="text-muted-foreground">Durata prevista</dt><dd>{n} {n === 1 ? "giorno" : "giorni"}</dd>
@@ -168,6 +172,13 @@ function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; 
   return (
     <form onSubmit={check} className="space-y-3" aria-label="Registra un nuovo prestito" noValidate>
       <h3 className="text-lg font-semibold">Registra un prestito</h3>
+      {multi && (
+        <div className="max-w-xs"><Label htmlFor="ln-copy">Copia da prestare *</Label>
+          <select id="ln-copy" className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={copyNo} onChange={(e) => setCopyNo(e.target.value)}>
+            {free.map((c) => <option key={c.copyNo} value={c.copyNo}>{copyName(c)}</option>)}
+          </select>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label htmlFor="ln-borrower">Destinatario *</Label><Input id="ln-borrower" value={borrower} maxLength={LOAN_LIMITS.borrower} onChange={(e) => setBorrower(e.target.value)} /></div>
         <div><Label htmlFor="ln-contact">Recapito (facoltativo)</Label><Input id="ln-contact" value={contact} maxLength={LOAN_LIMITS.contact} onChange={(e) => setContact(e.target.value)} aria-describedby="ln-contact-h" /><p id="ln-contact-h" className="mt-1 text-xs text-muted-foreground">Compila solo se serve davvero per rintracciare la persona.</p></div>
@@ -185,11 +196,11 @@ function NewLoanFlow({ bookId, bookTitle, onCancel, onDone }: { bookId: string; 
   );
 }
 
-function ActivePanel({ loan, panel, setPanel, bookTitle, onDone }: { loan: Loan; panel: Panel; setPanel: (p: Panel) => void; bookTitle: string; onDone: (m: string) => void }) {
+function ActivePanel({ loan, multi, panel, setPanel, bookTitle, onDone }: { loan: Loan; multi: boolean; panel: Panel; setPanel: (p: Panel) => void; bookTitle: string; onDone: (m: string) => void }) {
   return (
     <div className="space-y-3 rounded-md border bg-background p-4">
-      <p className="flex flex-wrap items-center gap-2 text-lg font-semibold">Libro in prestito <LoanPill value={loan.state} /></p>
-      <p className="text-sm">Il libro è in prestito a <strong>{loan.borrower}</strong>.</p>
+      <p className="flex flex-wrap items-center gap-2 text-lg font-semibold">{multi ? `Copia n. ${loan.copyNo} in prestito` : "Libro in prestito"} <LoanPill value={loan.state} /></p>
+      <p className="text-sm">{multi ? `La copia n. ${loan.copyNo}` : "Il libro"} è in prestito a <strong>{loan.borrower}</strong>.</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted-foreground">Data del prestito</dt><dd>{fmtDate(loan.loanDate)}</dd>
         <dt className="text-muted-foreground">Durata prevista</dt><dd>{loan.plannedDays} {loan.plannedDays === 1 ? "giorno" : "giorni"}</dd>
@@ -197,13 +208,13 @@ function ActivePanel({ loan, panel, setPanel, bookTitle, onDone }: { loan: Loan;
         {loan.contact && (<><dt className="text-muted-foreground">Recapito</dt><dd>{loan.contact}</dd></>)}
         {loan.notes && (<><dt className="text-muted-foreground">Note</dt><dd>{loan.notes}</dd></>)}
       </dl>
-      {panel === "return"
+      {typeof panel === "object" && panel?.kind === "return" && panel.loan.id === loan.id
         ? <ReturnFlow loan={loan} bookTitle={bookTitle} onCancel={() => setPanel(null)} onDone={onDone} />
         : (
           <>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={() => setPanel("return")}><Undo2 aria-hidden /> Registra restituzione</Button>
-              <Button type="button" variant="outline" onClick={() => setPanel({ kind: "void", loan })}>Annulla prestito registrato per errore</Button>
+              <Button type="button" onClick={() => setPanel({ kind: "return", loan })} aria-label={multi ? `Registra restituzione della copia n. ${loan.copyNo}` : undefined}><Undo2 aria-hidden /> Registra restituzione</Button>
+              <Button type="button" variant="outline" onClick={() => setPanel({ kind: "void", loan })} aria-label={multi ? `Annulla prestito registrato per errore (copia n. ${loan.copyNo})` : undefined}>Annulla prestito registrato per errore</Button>
             </div>
             <p className="text-xs text-muted-foreground">Un nuovo prestito di questa copia si potrà registrare dopo la restituzione.</p>
           </>
@@ -325,6 +336,71 @@ function CorrectionLog({ loanId, count }: { loanId: string; count: number }) {
           ))}
         </ul>
       ))}
+    </div>
+  );
+}
+
+/** Copie fisiche del libro: tutti le vedono (senza dati personali); l'admin ne aggiunge e corregge codice e note. Le copie non si cancellano. */
+function CopiesPanel({ bookId, copies, isAdmin, onChanged }: { bookId: string; copies: BookCopy[]; isAdmin: boolean; onChanged: (m: string) => void }) {
+  const api = useBooksApi();
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<BookCopy | null>(null);
+  const [code, setCode] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const reset = () => { setAdding(false); setEditing(null); setCode(""); setNote(""); setErr(null); };
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      if (editing) {
+        await api.updateCopy(editing.id!, { inventoryCode: code, notes: note });
+        reset(); onChanged(`Dati della ${copyName(editing)} aggiornati.`);
+      } else {
+        const c = await api.addCopy(bookId, { inventoryCode: code, notes: note });
+        reset(); onChanged(`Aggiunta la copia n. ${c.copyNo}.`);
+      }
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Operazione non riuscita.");
+    } finally { setBusy(false); }
+  }
+  const startEdit = (c: BookCopy) => { setAdding(false); setEditing(c); setCode(c.inventoryCode ?? ""); setNote(c.notes ?? ""); setErr(null); };
+
+  return (
+    <div className="mb-6 rounded-md border bg-background p-4">
+      <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold"><Library className="h-4 w-4" aria-hidden /> Copie fisiche ({copies.length})</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[28rem] text-left text-sm">
+          <caption className="sr-only">Copie fisiche del libro</caption>
+          <thead className="border-b text-muted-foreground"><tr>{["Copia", "Codice di inventario", "Stato", "Note"].map((h) => <th key={h} scope="col" className="py-2 pr-3 font-semibold">{h}</th>)}{isAdmin && <th scope="col" className="py-2 font-semibold"><span className="sr-only">Azioni</span></th>}</tr></thead>
+          <tbody>
+            {copies.map((c) => (
+              <tr key={c.copyNo} className="border-b align-top last:border-0">
+                <td className="py-2 pr-3">n. {c.copyNo}</td>
+                <td className="py-2 pr-3">{c.inventoryCode ?? <span className="text-muted-foreground">—</span>}</td>
+                <td className="py-2 pr-3"><LoanPill value={c.state === "disponibile" ? "disponibile" : c.state === "in ritardo" ? "in ritardo" : "in prestito"} />{c.dueDate && <span className="block text-xs text-muted-foreground">entro il {fmtDate(c.dueDate)}</span>}</td>
+                <td className="py-2 pr-3">{c.notes ?? <span className="text-muted-foreground">—</span>}</td>
+                {isAdmin && <td className="py-2">{c.id !== null && <Button type="button" variant="outline" size="sm" aria-label={`Modifica codice e note della copia n. ${c.copyNo}`} onClick={() => startEdit(c)}>Modifica</Button>}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {isAdmin && !adding && !editing && <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => setAdding(true)}>Aggiungi una copia</Button>}
+      {isAdmin && (adding || editing) && (
+        <form onSubmit={(e) => void save(e)} className="mt-3 space-y-3 border-t pt-3" aria-label={editing ? `Modifica la ${copyName(editing)}` : "Aggiungi una copia"} noValidate>
+          <h4 className="font-semibold">{editing ? `Modifica la copia n. ${editing.copyNo}` : "Nuova copia"}</h4>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div><Label htmlFor="cp-code">Codice di inventario (facoltativo)</Label><Input id="cp-code" value={code} maxLength={COPY_LIMITS.code} onChange={(e) => setCode(e.target.value)} aria-describedby="cp-code-h" /><p id="cp-code-h" className="mt-1 text-xs text-muted-foreground">Deve essere unico nella biblioteca.</p></div>
+            <div><Label htmlFor="cp-note">Note (facoltative)</Label><Input id="cp-note" value={note} maxLength={COPY_LIMITS.notes} onChange={(e) => setNote(e.target.value)} placeholder="es. scaffale B, dorso rovinato" /></div>
+          </div>
+          {err && <ErrorBox message={err} />}
+          <div className="flex flex-wrap gap-2"><Button type="submit" disabled={busy}>{busy ? "Salvataggio…" : editing ? "Salva" : "Aggiungi la copia"}</Button><Button type="button" variant="outline" disabled={busy} onClick={reset}>Annulla</Button></div>
+        </form>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">Le copie non si cancellano: i loro prestiti restano nello storico.</p>
     </div>
   );
 }

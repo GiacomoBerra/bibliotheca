@@ -6,6 +6,7 @@ import { emptyBookInput, type BooksApi } from "../src/lib/api/types";
 import type { LoanRestoreRecord } from "../src/lib/api/loans";
 import { applyLoanRestore, applyRestore, listEveryCorrection, listEveryLoan, loanHistoryDigest, parseBackup, planLoanRestore, planRestore, verifyLoanRestore, type ParsedBackup } from "../src/lib/backup";
 import { booksToJson } from "../src/lib/export";
+import * as copiesRepo from "./copiesRepo";
 import * as loansRepo from "./loansRepo";
 import { handle } from "./router";
 import { makeDeps, makeTestDb } from "./testHarness";
@@ -29,7 +30,7 @@ const raw = (db: Db, roles: string | null, path: string, body: unknown, headers:
 async function makeBackup(api: BooksApi): Promise<string> {
   const books = await api.listAllBooks();
   const loans = await listEveryLoan(api);
-  return booksToJson(books, new Date("2026-10-15T10:00:00Z"), loans, await listEveryCorrection(api, loans));
+  return booksToJson(books, new Date("2026-10-15T10:00:00Z"), loans, await listEveryCorrection(api, loans), await api.listAllCopies());
 }
 const parsed = (text: string): Extract<ParsedBackup, { ok: true }> => { const p = parseBackup(text); if (!p.ok) throw new Error(p.message); return p; };
 
@@ -41,6 +42,7 @@ async function seed() {
   const [b1, b2, b3, b4, b5] = [await mk("RT Attivo"), await mk("RT Restituito"), await mk("RT Annullato"), await mk("RT Restituzione annullata"), await mk("RT Doppia correzione")];
   const lend = (id: string, over: object = {}) => a.createLoan(id, { borrower: "Marta Rossi", contact: "m@example.org", loanDate: "2026-09-01", plannedDays: 14, notes: "nota", ...over });
   await lend(b1, { borrower: "Attivo Anna", loanDate: "2026-10-01", plannedDays: 30 });
+  await copiesRepo.addCopy(db, b1, { inventoryCode: "RT-INV-2", notes: "seconda copia" }, TODAY);
   await loansRepo.createLoan(db, "admin-1", b1, { borrower: "Seconda Copia", contact: "", loanDate: "2026-10-05", plannedDays: 10, notes: "" }, TODAY, 2);
   const l2 = await lend(b2, { borrower: "Restituito Luca" });
   await a.returnLoan(l2.id, "2026-09-12");
@@ -73,14 +75,20 @@ describe("Backup v4: ripristino integrale di prestiti, annullamenti e correzioni
     const api = client(dst.db, "admin", "restorer");
     const r = await applyRestore(api, planRestore(A.items, []));
     expect(r).toMatchObject({ created: 5, failed: [] });
-    const plan = await planLoanRestore(api, A.loans!, r.idMap);
+    expect(A.copies!.length).toBe(6); // 5 schede (copia 1 automatica) + la seconda copia con codice
+    expect(A.copies!.find((c) => c.inventoryCode === "RT-INV-2")).toMatchObject({ copyNo: 2, notes: "seconda copia" });
+    expect(JSON.parse(textA)).toMatchObject({ copyCount: 6 });
+    const plan = await planLoanRestore(api, A.loans!, r.idMap, A.copies!);
     expect(plan).toMatchObject({ same: 0, probableDuplicates: [], differing: [], blocked: [], noBook: 0 });
     expect(plan.toCreate).toHaveLength(6);
     const res = await applyLoanRestore(api, plan);
     expect(res).toMatchObject({ created: 6, voidedCreated: 2, corrections: 4, duplicates: 0, failed: [] });
+    expect(res.copiesCreated).toBe(1); // la copia 1 esiste già alla creazione della scheda; manca solo la n. 2
 
-    // verifica finale sul database reale
-    expect(await verifyLoanRestore(api, A.loans!, r.idMap)).toEqual({ checked: 6, mismatches: [] });
+    // verifica finale sul database reale (6 prestiti + 6 copie)
+    expect(await verifyLoanRestore(api, A.loans!, r.idMap, new Set(), A.copies!)).toEqual({ checked: 6, copiesChecked: 6, mismatches: [] });
+    const restored = parsed(await makeBackup(api));
+    expect(restored.copies!.map((c) => [c.copyNo, c.inventoryCode, c.notes]).sort()).toEqual(A.copies!.map((c) => [c.copyNo, c.inventoryCode, c.notes]).sort());
 
     // equivalenza dei due backup (stesse storie, indipendentemente dagli id delle schede)
     const C = parsed(await makeBackup(api));

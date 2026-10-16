@@ -217,3 +217,27 @@ Schede, MARC21, copie fisiche e, per **ogni prestito** (attivo, concluso, annull
 `server/restoreV4.test.ts` (6, Postgres): **andata e ritorno** con prestito attivo, restituito, annullato, restituzione annullata (e poi di nuovo restituito), restituzione annullata + prestito annullato e seconda copia → backup originale e backup ripristinato **equivalenti** (impronta della storia per scheda: id, autori, date, motivi, stati prima/dopo, ordine delle correzioni), disponibilità e stati identici, provenienza registrata, traccia immutabile; importazione ripetuta = nessun duplicato e backup identico; dati diversi non sovrascritti; **atomicità** (un elemento inesistente o in conflitto → zero righe scritte); validazione (cronologia incoerente rifiutata, doppi attivi); permessi (viewer 403, senza sessione 401, senza CSRF 403, nulla scritto); compatibilità v3/v2. `server/pgdriver.test.ts`: lo stesso ripristino col driver `pg` reale, compreso il rollback. `server/import.test.ts` e `server/corrections.test.ts` adeguati.
 
 **Risultati (16 ott 2026, sandbox):** `npx vitest run` → **354 test, 23 file, tutti passati**; `npx tsc --noEmit` senza errori; `npm run build` riuscita. Nuovi: `server/restoreV4.test.ts` (6), un test `pg` reale in `server/pgdriver.test.ts`, 2 test di interfaccia in `src/test/restore.test.tsx`, test adeguati in `server/import.test.ts`. **Nessuna verifica su Deploy Preview eseguita da Claude** (il sandbox non la raggiunge).
+
+---
+
+# Copie fisiche (branch `feature/copie-affidabilita`) — stato: implementata e testata in automatico; NON verificata su Deploy Preview
+
+## Cosa c'è
+- **Modello**: ogni scheda ha almeno la copia n. 1 (creata insieme alla scheda; la migrazione `20261016000006_copy_details.sql` la crea per le schede esistenti). Ogni copia ha numero, **codice di inventario** (facoltativo, univoco senza distinguere maiuscole/spazi, max 50 caratteri) e **note** (max 500). Le copie **non si cancellano**: il numero non viene mai riusato.
+- **Interfaccia (scheda del libro)**: tabella «Copie fisiche (N)» con stato per copia; l'amministratore può «Aggiungere una copia» e «Modificare» codice e note. Il visualizzatore vede le copie, senza azioni.
+- **Prestiti per copia**: il prestito sceglie la prima copia libera o quella indicata; ogni copia ha al massimo un prestito attivo; restituzione, annullamento e correzioni agiscono sul prestito della copia. Il catalogo mostra «in prestito», «disponibilità parziale» (N di M copie), «in ritardo» secondo le regole già in vigore.
+- **Backup**: il file v4 contiene l'elenco completo delle copie (anche senza prestiti, con codice e note) e `copyCount`. Il ripristino crea le copie mancanti, **non sovrascrive** codice o note già presenti, è idempotente e, a fine operazione, rilegge il database e confronta le copie con il file.
+
+## Difetto trovato e corretto durante i test
+`addCopy` usava una sola istruzione SQL che reinseriva la riga e poi la rileggeva nella stessa query: la riga non era visibile, quindi il codice ritentava e **inseriva 4 copie invece di 1**. Corretto con `RETURNING`; coperto da `server/copies.test.ts`.
+
+## Test automatici (Claude, sandbox)
+Risultato complessivo: tsc pulito, **364 test su 364** verdi, build riuscita.
+
+`server/copies.test.ts` (API su Postgres reale/PGlite: aggiunta, codice duplicato 409, modifica, nessuna cancellazione 405, permessi viewer 403, prestiti per copia con disponibilità parziale, ripristino con copie idempotente, file con codici duplicati rifiutato); `src/test/copies.test.tsx` (interfaccia admin/viewer); `server/restoreV4.test.ts` esteso (andata e ritorno con seconda copia e codice: 6 prestiti + 6 copie verificati).
+
+## Da verificare a mano sulla Deploy Preview
+1. Apri una scheda → «Aggiungi una copia» con codice → compare nella tabella.
+2. Riprova lo stesso codice (anche in maiuscolo) su un'altra scheda → messaggio di errore chiaro.
+3. Registra due prestiti su due copie: catalogo = «disponibilità parziale»; restituisci uno → torna «in prestito» o «disponibile» di conseguenza.
+4. Impostazioni → scarica il backup, ripristinalo in un catalogo vuoto (o su un secondo ambiente) → copie e codici identici.

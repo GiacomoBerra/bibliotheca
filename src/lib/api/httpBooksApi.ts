@@ -1,5 +1,5 @@
 import { BooksApiError, mapHttpError, networkError } from "./errors";
-import type { BookLoans, Loan, LoanCorrection, LoanPage } from "./loans";
+import type { BookCopy, BookLoans, Loan, LoanCorrection, LoanPage, RestoreResult } from "./loans";
 import type { LookupResponse } from "@/lib/sources/types";
 import type { Book, BookInput, BookPage, BooksApi, CatalogStats, ListOptions } from "./types";
 
@@ -79,7 +79,11 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
     },
     createLoan: async (bookId, input) => (await call("POST", `/api/books/${encodeURIComponent(bookId)}/loans`, input)) as Loan,
     returnLoan: async (id, returnedDate) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/return`, returnedDate ? { returnedDate } : {})) as Loan,
-    restoreLoans: async (loans) => (await call("POST", "/api/loans/restore", { loans })) as { received: number; created: number; skipped: number; corrections: number },
+    restoreLoans: async (loans, copies = []) => (await call("POST", "/api/loans/restore", { loans, copies })) as RestoreResult,
+    listCopies: async (bookId) => ((await call("GET", `/api/books/${encodeURIComponent(bookId)}/copies`)) as { items: BookCopy[] }).items,
+    listAllCopies: async () => ((await call("GET", "/api/copies")) as { items: BookCopy[] }).items,
+    addCopy: async (bookId, input) => (await call("POST", `/api/books/${encodeURIComponent(bookId)}/copies`, input)) as BookCopy,
+    updateCopy: async (copyId, input) => (await call("PUT", `/api/copies/${encodeURIComponent(copyId)}`, input)) as BookCopy,
     voidLoan: async (id, reason) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/void`, { reason })) as Loan,
     undoLoanReturn: async (id, reason) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/undo-return`, { reason })) as Loan,
     listLoanCorrections: async (id) => ((await call("GET", `/api/loans/${encodeURIComponent(id)}/corrections`)) as { items: LoanCorrection[] }).items,

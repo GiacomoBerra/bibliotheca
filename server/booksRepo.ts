@@ -86,7 +86,8 @@ function writeParams(input: BookInput): unknown[] {
 export async function createBook(db: Db, userId: string, input: BookInput): Promise<Book> {
   const cols = WRITE_COLS.join(", ");
   const ph = WRITE_COLS.map((_, i) => (WRITE_COLS[i] === "marc_fields" ? `$${i + 2}::jsonb` : `$${i + 2}`)).join(", ");
-  const r = await db.query<BookRow>(`insert into books (created_by, updated_by, ${cols}) values ($1, $1, ${ph}) returning ${BOOK_COLUMNS}`, [userId, ...writeParams(input)]);
+  // Ogni libro nasce con la sua copia n. 1 (stessa istruzione: o entrambi o nessuno).
+  const r = await db.query<BookRow>(`with ins as (insert into books (created_by, updated_by, ${cols}) values ($1, $1, ${ph}) returning *), cp as (insert into book_copies (book_id, copy_no) select id, 1 from ins) select ${BOOK_COLUMNS} from ins`, [userId, ...writeParams(input)]);
   return rowToBook(r.rows[0]!);
 }
 

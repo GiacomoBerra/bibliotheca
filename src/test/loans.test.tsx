@@ -45,7 +45,7 @@ describe("Prestiti — scheda del libro", () => {
     expect(api.allLoans()).toHaveLength(0); // nulla è salvato finché non si conferma
     await user.click(screen.getByRole("button", { name: "Conferma e registra il prestito" }));
     expect(await screen.findByText(/Prestito registrato a Marta Rossi/)).toBeInTheDocument();
-    const tabella = await screen.findByRole("table");
+    const tabella = await screen.findByRole("table", { name: /Storico/ });
     expect(within(tabella).getByText("Marta Rossi")).toBeInTheDocument();
     expect(within(tabella).getByText("in prestito")).toBeInTheDocument();
     expect(api.allLoans()).toHaveLength(1);
@@ -84,7 +84,7 @@ describe("Prestiti — scheda del libro", () => {
     expect(api.allLoans()[0]!.returnedDate).toBeNull();
     await user.click(screen.getByRole("button", { name: "Conferma restituzione" }));
     expect(await screen.findByText(/Restituzione registrata: il prestito resta nello storico/)).toBeInTheDocument();
-    await waitFor(() => expect(within(screen.getByRole("table")).getByText("restituito")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole("table", { name: /Storico/ })).getByText("restituito")).toBeInTheDocument());
     expect(api.allLoans()).toHaveLength(1);
     expect(api.allLoans()[0]!.returnedDate).not.toBeNull();
     // di nuovo disponibile: si può registrare un nuovo prestito
@@ -105,7 +105,7 @@ describe("Prestiti — scheda del libro", () => {
     await user.type(within(form).getByLabelText(/Motivo della correzione/), "Libro sbagliato");
     await user.click(conferma);
     expect(await screen.findByText(/Prestito annullato: resta nello storico come «annullato»/)).toBeInTheDocument();
-    const riga = (await screen.findByRole("table")).querySelector("tbody tr")!;
+    const riga = (await screen.findByRole("table", { name: /Storico/ })).querySelector("tbody tr")!;
     expect(within(riga as HTMLElement).getByText("annullato")).toBeInTheDocument();
     expect(within(riga as HTMLElement).getByText(/Libro sbagliato/)).toBeInTheDocument();
     expect(api.allLoans()).toHaveLength(1); // non cancellato
@@ -141,7 +141,7 @@ describe("Prestiti — scheda del libro", () => {
     await user.click(screen.getByRole("button", { name: "Conferma restituzione" }));
     await screen.findByText(/Restituzione registrata/);
     // il prestito di Bruno è ora l'ultimo: solo per quello l'annullamento è offerto; quello di Anna ha un prestito successivo
-    const righe = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    const righe = within(screen.getByRole("table", { name: /Storico/ })).getAllByRole("row").slice(1);
     expect(righe).toHaveLength(2);
     expect(within(righe[1]!).queryByRole("button", { name: /Annulla registrazione della restituzione/ })).not.toBeInTheDocument();
     expect(within(righe[1]!).getByRole("button", { name: /Annulla prestito registrato per errore/ })).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe("Prestiti — scheda del libro", () => {
     const api = makeMemoryApi([makeBook({ id: "1", title: "Il nome della rosa" })], { role: "viewer" });
     await api.createLoan("1", { borrower: "Nome Riservato", contact: "tel", loanDate: "2026-10-01", plannedDays: 14, notes: "privata" });
     renderAs("viewer", "/catalogo/1", api);
-    const tabella = await screen.findByRole("table");
+    const tabella = await screen.findByRole("table", { name: /Storico/ });
     expect(within(tabella).getByText("riservato")).toBeInTheDocument();
     expect(screen.queryByText("Nome Riservato")).not.toBeInTheDocument();
     expect(screen.queryByText("privata")).not.toBeInTheDocument();

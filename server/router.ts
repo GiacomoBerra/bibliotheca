@@ -3,7 +3,8 @@ import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
 import * as loansRepo from "./loansRepo";
-import { LOAN_FILTERS, parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseRestoreInput, parseReturnInput, todayIso, type LoanFilter } from "../src/lib/api/loans";
+import * as copiesRepo from "./copiesRepo";
+import { LOAN_FILTERS, parseCopyInput, parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseRestoreInput, parseReturnInput, todayIso, type LoanFilter } from "../src/lib/api/loans";
 import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
@@ -80,10 +81,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
-    const m = /^\/api\/(books|stats|export|lookup|loans)(?:\/([^/]+)(?:\/(loans|return|void|undo-return|corrections))?)?$/.exec(path);
+    const m = /^\/api\/(books|stats|export|lookup|loans|copies)(?:\/([^/]+)(?:\/(loans|copies|return|void|undo-return|corrections))?)?$/.exec(path);
     if (!m) return fail(404, "not_found", "Risorsa inesistente.");
-    const [, resource, id, sub] = m as unknown as [string, string, string | undefined, "loans" | "return" | "void" | "undo-return" | "corrections" | undefined];
-    if ((sub === "loans" && resource !== "books") || (sub && sub !== "loans" && resource !== "loans")) return fail(404, "not_found", "Risorsa inesistente.");
+    const [, resource, id, sub] = m as unknown as [string, string, string | undefined, "loans" | "copies" | "return" | "void" | "undo-return" | "corrections" | undefined];
+    if (((sub === "loans" || sub === "copies") && resource !== "books") || (sub && sub !== "loans" && sub !== "copies" && resource !== "loans")) return fail(404, "not_found", "Risorsa inesistente.");
 
     // 1. CSRF  2. Autenticazione  3. Ruolo (autorizzazione, PRIMA di qualsiasi accesso ai dati)  4. Database
     if (!csrfOk(req)) return fail(403, "csrf", "Richiesta non consentita da questo indirizzo.");
@@ -135,6 +136,36 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
       return fail(405, "method", "Metodo non consentito.");
     }
+    // Copie fisiche. Elenco di un libro: anche il visualizzatore (nessun dato personale). Aggiungere/modificare: solo admin.
+    if (resource === "books" && id && sub === "copies") {
+      if (req.method === "GET") {
+        const r = await copiesRepo.listCopies(db, id, today);
+        return r ? json(200, { items: r }) : fail(404, "not_found", "Scheda non trovata.");
+      }
+      if (req.method === "POST") {
+        const body = await readJson(req);
+        if (!body.ok) return body.res;
+        const parsed = parseCopyInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", "Alcuni campi della copia non sono validi.", parsed.errors);
+        try { return json(201, await copiesRepo.addCopy(db, id, parsed.value, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      return fail(405, "method", "Metodo non consentito.");
+    }
+    if (resource === "copies") {
+      if (!id && !sub) {
+        if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");
+        return json(200, { items: await copiesRepo.listAllCopies(db, today) });
+      }
+      if (id && !sub) {
+        if (req.method !== "PUT") return fail(405, "method", "Le copie non si cancellano: i loro prestiti restano nello storico.");
+        const body = await readJson(req);
+        if (!body.ok) return body.res;
+        const parsed = parseCopyInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", "Alcuni campi della copia non sono validi.", parsed.errors);
+        try { return json(200, await copiesRepo.updateCopy(db, id, parsed.value, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      return fail(404, "not_found", "Risorsa inesistente.");
+    }
     if (resource === "loans") {
       // Ripristino di prestiti e cronologia da un backup: tutto o niente, solo admin (il viewer è già fermato sopra).
       if (id === "restore" && !sub) {
@@ -143,7 +174,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (!body.ok) return body.res;
         const parsed = parseRestoreInput(body.value);
         if (!parsed.ok) return fail(400, "validation", `${parsed.message} Nulla è stato scritto.`);
-        try { return json(200, await loansRepo.restoreLoans(db, userId, parsed.value)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+        try { return json(200, await loansRepo.restoreLoans(db, userId, parsed.value, parsed.copies)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
       }
       if (!id && !sub) {
         if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");

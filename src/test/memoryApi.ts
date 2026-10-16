@@ -1,6 +1,6 @@
 import { BooksApiError } from "@/lib/api/errors";
 import { emptyBookInput, type Book, type BookInput, type BooksApi, type ListOptions } from "@/lib/api/types";
-import { addDays, availabilityOf, summarizeAvailability, type BookAvailability, daysBetween, loanDerived, parseCorrectionInput, parseLoanEdit, parseLoanInput, type Loan, type LoanCorrection } from "@/lib/api/loans";
+import { addDays, availabilityOf, summarizeAvailability, type BookAvailability, daysBetween, loanDerived, parseCorrectionInput, parseLoanEdit, parseLoanInput, type Loan, type LoanCorrection, type BookCopy } from "@/lib/api/loans";
 import { searchTerms } from "@/lib/api/mapping";
 
 export function makeBook(over: Partial<Book> & { id: string; title: string }): Book {
@@ -18,11 +18,20 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
   const lid = () => `loan-${loans.length + 1}`;
   const refresh = (l: Loan): Loan => ({ ...l, ...loanDerived(l, today) });
   let corrections: LoanCorrection[] = [];
+  let copies: { id: string; bookId: string; copyNo: number; inventoryCode: string | null; notes: string | null }[] = [];
+  const copiesOf = (bookId: string): BookCopy[] => {
+    const mine = copies.filter((c) => c.bookId === bookId).sort((a, b) => a.copyNo - b.copyNo);
+    const rows = mine.length ? mine : [{ id: null as string | null, bookId, copyNo: 1, inventoryCode: null, notes: null }];
+    return rows.map((c) => {
+      const act = loans.map(refresh).find((l) => l.bookId === bookId && l.copyNo === c.copyNo && !l.returnedDate && !l.voidedAt);
+      return { ...c, state: act ? (act.state === "in ritardo" ? "in ritardo" : "in prestito") : "disponibile", dueDate: act?.dueDate ?? null } as BookCopy;
+    });
+  };
   const forced: Record<string, BookAvailability> = {};
   const availOf = (bookId: string): BookAvailability => {
     if (forced[bookId]) return forced[bookId]!;
     const act = loans.filter((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt).map(refresh);
-    return summarizeAvailability(1, act.length, act.filter((l) => l.state === "in ritardo").length);
+    return summarizeAvailability(Math.max(1, copies.filter((c) => c.bookId === bookId).length), act.length, act.filter((l) => l.state === "in ritardo").length);
   };
   const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null, voidedBy: null, createdBy: null, createdAt: null, returnedBy: null } : l);
   const nCorr = (l: Loan): Loan => ({ ...l, correctionCount: corrections.filter((c) => c.loanId === l.id).length });
@@ -54,11 +63,36 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       if (!p.ok) throw new BooksApiError("validation", Object.values(p.errors).join(" "));
       const book = books.find((b) => b.id === bookId);
       if (!book) throw new BooksApiError("notfound", "Il libro non esiste più.");
-      if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
+      const cs = copiesOf(bookId);
+      let copyNo = input.copyNo ?? (input.returnedDate ? 1 : cs.find((c) => c.state === "disponibile")?.copyNo);
+      if (copyNo === undefined) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
+      if (!cs.some((c) => c.copyNo === copyNo)) throw new BooksApiError("notfound", `La copia n. ${copyNo} non esiste per questo libro.`);
+      if (!input.returnedDate && cs.find((c) => c.copyNo === copyNo)!.state !== "disponibile") throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
       const dueDate = addDays(input.loanDate, input.plannedDays);
-      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, voidedBy: null, correctionCount: 0, createdBy: "admin", createdAt: "2026-10-15T09:00:00Z", returnedBy: input.returnedDate ? "admin" : null });
+      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}-${copyNo}`, copyNo, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, voidedBy: null, correctionCount: 0, createdBy: "admin", createdAt: "2026-10-15T09:00:00Z", returnedBy: input.returnedDate ? "admin" : null });
       loans = [l, ...loans];
       return l;
+    },
+    async listCopies(bookId) { fail(); return copiesOf(bookId); },
+    // Come il server: ogni scheda ha la riga della copia n. 1.
+    async listAllCopies() { fail(); return books.flatMap((b) => copiesOf(b.id)).map((c) => (c.id === null ? { ...c, id: `cp-virtual-${c.bookId}` } : c)); },
+    async addCopy(bookId, input) {
+      fail();
+      if (!books.some((b) => b.id === bookId)) throw new BooksApiError("notfound", "Il libro non esiste più.");
+      if (input.inventoryCode && copies.some((c) => c.inventoryCode?.toLowerCase() === input.inventoryCode.trim().toLowerCase())) throw new BooksApiError("conflict", "Questo codice di inventario è già usato da un'altra copia.");
+      if (!copies.some((c) => c.bookId === bookId)) copies.push({ id: `cp-${copies.length + 1}`, bookId, copyNo: 1, inventoryCode: null, notes: null });
+      const next = Math.max(...copies.filter((c) => c.bookId === bookId).map((c) => c.copyNo)) + 1;
+      const c = { id: `cp-${copies.length + 1}`, bookId, copyNo: next, inventoryCode: input.inventoryCode.trim() || null, notes: input.notes.trim() || null };
+      copies.push(c);
+      return copiesOf(bookId).find((x) => x.id === c.id)!;
+    },
+    async updateCopy(copyId, input) {
+      fail();
+      const c = copies.find((x) => x.id === copyId);
+      if (!c) throw new BooksApiError("notfound", "Copia non trovata.");
+      if (input.inventoryCode && copies.some((x) => x.id !== copyId && x.inventoryCode?.toLowerCase() === input.inventoryCode.trim().toLowerCase())) throw new BooksApiError("conflict", "Questo codice di inventario è già usato da un'altra copia.");
+      c.inventoryCode = input.inventoryCode.trim() || null; c.notes = input.notes.trim() || null;
+      return copiesOf(c.bookId).find((x) => x.id === c.id)!;
     },
     async restoreLoans(recs) {
       fail();
@@ -74,7 +108,7 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
         corrections = [...mine.reverse(), ...corrections];
         created++; nCor += r.corrections.length;
       }
-      return { received: recs.length, created, skipped: recs.length - created, corrections: nCor };
+      return { received: recs.length, created, skipped: recs.length - created, corrections: nCor, copiesCreated: 0 };
     },
     async returnLoan(id, returnedDate) {
       fail();
