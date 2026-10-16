@@ -24,7 +24,7 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
     const act = loans.filter((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt).map(refresh);
     return summarizeAvailability(1, act.length, act.filter((l) => l.state === "in ritardo").length);
   };
-  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null, voidedBy: null } : l);
+  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null, voidedBy: null, createdBy: null, createdAt: null, returnedBy: null } : l);
   const nCorr = (l: Loan): Loan => ({ ...l, correctionCount: corrections.filter((c) => c.loanId === l.id).length });
   const api: BooksApi & { all(): Book[]; allLoans(): Loan[]; forceAvailability(bookId: string, a: BookAvailability): void } = {
     all: () => books,
@@ -56,16 +56,25 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       if (!book) throw new BooksApiError("notfound", "Il libro non esiste più.");
       if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
       const dueDate = addDays(input.loanDate, input.plannedDays);
-      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, voidedBy: null, correctionCount: 0 });
-      const vr = input.voidedRestore;
-      if (vr) {
-        const v = refresh({ ...l, voidedAt: "2026-10-15T10:00:00Z", voidReason: vr.reason, voidedBy: "admin" });
-        corrections = [{ id: `c-${corrections.length + 1}`, loanId: l.id, action: "annulla_prestito", reason: `Ripristinato da backup. Annullamento originale del ${vr.originalAt} da ${vr.originalBy}: ${vr.reason}`, correctedBy: "admin", correctedAt: "2026-10-15T10:00:00Z", before: { state: l.returnedDate ? "restituito" : "attivo", returnedDate: l.returnedDate, returnedBy: null, voided: false }, after: { state: "annullato", returnedDate: l.returnedDate, returnedBy: null, voided: true, restoredFrom: { at: vr.originalAt, by: vr.originalBy, reason: vr.reason } } }, ...corrections];
-        loans = [v, ...loans];
-        return nCorr(v);
-      }
+      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, voidedBy: null, correctionCount: 0, createdBy: "admin", createdAt: "2026-10-15T09:00:00Z", returnedBy: input.returnedDate ? "admin" : null });
       loans = [l, ...loans];
       return l;
+    },
+    async restoreLoans(recs) {
+      fail();
+      let created = 0, nCor = 0;
+      for (const r of recs) {
+        if (r.id && loans.some((l) => l.id === r.id)) continue;
+        const book = books.find((b) => b.id === r.bookId);
+        if (!book) throw new BooksApiError("notfound", "Una delle schede indicate non esiste.");
+        const id = r.id ?? lid();
+        const l = refresh({ id, bookId: r.bookId, bookTitle: book.title, copyId: `copy-${r.bookId}-${r.copyNo}`, copyNo: r.copyNo, borrower: r.borrower, contact: r.contact || null, notes: r.notes || null, loanDate: r.loanDate, plannedDays: r.plannedDays, dueDate: addDays(r.loanDate, r.plannedDays), returnedDate: r.returnedDate, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: r.voided?.at ?? null, voidReason: r.voided?.reason ?? null, voidedBy: r.voided?.by ?? null, correctionCount: 0, createdBy: r.createdBy ?? "admin", createdAt: r.createdAt ?? "2026-10-15T09:00:00Z", returnedBy: r.returnedDate ? (r.returnedBy ?? "admin") : null });
+        loans = [l, ...loans];
+        const mine = r.corrections.map((c, k) => ({ id: `c-${corrections.length + k + 1}`, loanId: id, ...c }));
+        corrections = [...mine.reverse(), ...corrections];
+        created++; nCor += r.corrections.length;
+      }
+      return { received: recs.length, created, skipped: recs.length - created, corrections: nCor };
     },
     async returnLoan(id, returnedDate) {
       fail();

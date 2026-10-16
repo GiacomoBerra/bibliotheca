@@ -49,3 +49,6 @@ Il JSON esportato (`format: bibliotheca-backup`, `version: 3`; v1 e v2 restano l
 
 ## Correzioni dei prestiti (migrazione 0004)
 `loans.voided_at/voided_by/void_reason`: prestito annullato perché registrato per errore (resta nello storico). `loan_corrections`: traccia immutabile (azione `annulla_prestito` | `annulla_restituzione`, motivo, autore, data, `before_state`/`after_state` in JSON, `seq` per l'ordine). Gli indici univoci sui prestiti attivi ignorano i prestiti annullati. Ogni correzione aggiorna `loans` e scrive la traccia in una sola istruzione SQL (atomica).
+
+## Migrazione 0005 — provenienza dei ripristini (additiva)
+`20261016000005_restore_provenance.sql`: colonne facoltative `restored_at`/`restored_by` su `loans` e `loan_corrections` (con vincolo «entrambe o nessuna»). Nessun dato esistente è modificato. Il ripristino da backup (`POST /api/loans/restore`) inserisce prestiti e correzioni con autore e date originali e valorizza queste colonne; le righe create direttamente nell'app le lasciano vuote. La tabella `loan_corrections` resta immutabile (trigger su UPDATE/DELETE).

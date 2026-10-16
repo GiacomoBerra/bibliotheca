@@ -35,7 +35,7 @@ function Impostazioni() {
     const voided = loans.filter((l) => l.voidedAt).length;
     const text = booksToJson(books, new Date(), loans, corrections);
     const back = parseBackup(text);
-    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0 || (back.loans?.filter((l) => l.voided).length ?? -1) !== voided || (back.corrections?.length ?? -1) !== correctionTotal) {
+    if (!back.ok || back.items.length !== books.length || back.issues.length > 0 || (back.loans?.length ?? -1) !== loans.length || (back.loanIssues?.length ?? 0) > 0 || (back.loans?.filter((l) => l.voided).length ?? -1) !== voided || (back.loans?.reduce((n, l) => n + (l.corrections?.length ?? 0), 0) ?? -1) !== correctionTotal) {
       throw new Error("Il backup generato non supera il controllo di rilettura: non è stato salvato. Riprova; se il problema continua, non importare nulla.");
     }
     downloadText(`bibliotheca-backup-${new Date().toISOString().slice(0, 10)}.json`, text, "application/json");

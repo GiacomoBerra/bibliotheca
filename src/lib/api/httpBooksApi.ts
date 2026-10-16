@@ -79,6 +79,7 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
     },
     createLoan: async (bookId, input) => (await call("POST", `/api/books/${encodeURIComponent(bookId)}/loans`, input)) as Loan,
     returnLoan: async (id, returnedDate) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/return`, returnedDate ? { returnedDate } : {})) as Loan,
+    restoreLoans: async (loans) => (await call("POST", "/api/loans/restore", { loans })) as { received: number; created: number; skipped: number; corrections: number },
     voidLoan: async (id, reason) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/void`, { reason })) as Loan,
     undoLoanReturn: async (id, reason) => (await call("POST", `/api/loans/${encodeURIComponent(id)}/undo-return`, { reason })) as Loan,
     listLoanCorrections: async (id) => ((await call("GET", `/api/loans/${encodeURIComponent(id)}/corrections`)) as { items: LoanCorrection[] }).items,

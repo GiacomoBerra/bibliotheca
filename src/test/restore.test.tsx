@@ -104,9 +104,47 @@ describe("Ripristino da backup (interfaccia)", () => {
     await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
     await user.click(screen.getByRole("button", { name: "Ripristina" }));
     const out = await screen.findByRole("region", { name: "Esito del ripristino" });
-    expect(out).toHaveTextContent(/2 prestiti ripristinati, 0 già presenti/);
+    expect(out).toHaveTextContent(/2 prestiti ripristinati con 0 correzioni di cronologia; 0 già presenti/);
+    expect(out).toHaveTextContent(/Verifica finale superata: 2 prestiti/);
     expect(api.allLoans().map((l) => [l.borrower, l.returnedDate])).toEqual(expect.arrayContaining([["Anna", "2026-08-12"], ["Bruno", null]]));
     expect(api.allLoans()).toHaveLength(2);
+  });
+
+  const v4 = (bid: string, loan: object) => JSON.stringify({ format: "bibliotheca-backup", version: 4, count: 1, loanCount: 1, books: [makeBook({ id: bid, title: "Storia completa" })], copies: [], loans: [loan] });
+  const base = (bid: string) => ({ id: "99999999-9999-4999-8999-999999999999", bookId: bid, bookTitle: "Storia completa", copyNo: 1, borrower: "Carla", contact: "", notes: "", loanDate: "2026-09-01", plannedDays: 14, dueDate: "2026-09-15", returnedDate: null, createdBy: "admin", createdAt: "2026-09-01T08:00:00Z" });
+
+  it("backup v4: ripristina prestito annullato con le correzioni e mostra la verifica finale", async () => {
+    const user = userEvent.setup();
+    const api = renderSettings([]);
+    const bid = "44444444-4444-4444-8444-444444444444";
+    const st = (state: string, d: string | null, voided = false) => ({ state, returnedDate: d, returnedBy: d ? "admin" : null, voided });
+    const text = v4(bid, { ...base(bid), voided: { at: "2026-09-04T10:00:00Z", by: "admin2", reason: "errore" }, corrections: [
+      { action: "annulla_restituzione", reason: "data errata", correctedBy: "admin2", correctedAt: "2026-09-03T10:00:00Z", before: st("restituito", "2026-09-02"), after: st("attivo", null) },
+      { action: "annulla_prestito", reason: "errore", correctedBy: "admin2", correctedAt: "2026-09-04T10:00:00Z", before: st("attivo", null), after: st("annullato", null, true) },
+    ] });
+    await user.upload(await screen.findByLabelText("File di backup (.json)"), file(text));
+    await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
+    await user.click(screen.getByRole("button", { name: "Ripristina" }));
+    const out = await screen.findByRole("region", { name: "Esito del ripristino" });
+    expect(out).toHaveTextContent(/1 prestiti ripristinati \(di cui 1 annullati\) con 2 correzioni/);
+    expect(out).toHaveTextContent(/Verifica finale superata/);
+    expect(api.allLoans()[0]).toMatchObject({ state: "annullato", voidedBy: "admin2" });
+    expect(await api.listLoanCorrections(api.allLoans()[0]!.id)).toHaveLength(2);
+  });
+
+  it("backup v4 con cronologia incoerente: il ripristino dei prestiti è bloccato e non scrive nulla", async () => {
+    const user = userEvent.setup();
+    const api = renderSettings([]);
+    const bid = "55555555-5555-4555-8555-555555555555";
+    const text = v4(bid, { ...base(bid), voided: { at: "2026-09-04T10:00:00Z", by: "admin2", reason: "errore" }, corrections: [] });
+    await user.upload(await screen.findByLabelText("File di backup (.json)"), file(text));
+    const pre = await screen.findByRole("region", { name: "Anteprima del ripristino" });
+    expect(pre).toHaveTextContent(/BLOCCATO/);
+    expect(screen.queryByRole("checkbox", { name: /Ripristina anche i/ })).not.toBeInTheDocument(); // nessuna opzione per ripristinare prestiti non validi
+    await user.click(screen.getByRole("checkbox", { name: /confermo il ripristino/ }));
+    await user.click(screen.getByRole("button", { name: "Ripristina" }));
+    await screen.findByRole("region", { name: "Esito del ripristino" });
+    expect(api.allLoans()).toHaveLength(0);
   });
 
   it("il visualizzatore non vede né esportazione né ripristino", async () => {

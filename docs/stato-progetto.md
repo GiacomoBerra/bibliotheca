@@ -107,7 +107,7 @@ Il backup v2 **escludeva i prestiti annullati e non conteneva la cronologia dell
 - **Test**: `server/corrections.test.ts` (round trip su Postgres/PGlite: annullato → backup → ripristino → ancora annullato con traccia, copia libera, secondo ripristino senza duplicati; v2 ancora leggibile con avviso).
 
 ## Risultati dei test (16 ott 2026, eseguiti da Claude nel sandbox)
-- `npx vitest run`: **348 test, 22 file, tutti passati**.
+- `npx vitest run`: 348 test al 16 ott mattina (PR #6); dopo il backup v4: vedi riga seguente.
 - `npx tsc --noEmit`: nessun errore. `npm run build`: OK.
 - Cosa NON copre: Netlify Identity reale, funzioni su Netlify, database Netlify reale (qui PGlite e, per `pgdriver.test.ts`, driver `pg`), fonti bibliografiche reali, dettatura reale, contrasto colori, screen reader.
 - Il sandbox non può raggiungere le Deploy Preview: **nessuna verifica su preview è stata eseguita da Claude in questa fase**.
@@ -173,3 +173,36 @@ Legenda: **V** = Completata e verificata (automatica + verifica reale documentat
 
 ## Documenti tecnici da leggere insieme
 `docs/importazione.md` (backup v3), `docs/database.md` (migrazioni), `docs/marc21.md`, `docs/netlify-attivazione.md`, `docs/ricerca-bibliografica.md`, `docs/decisioni-e-stato.md`.
+
+---
+
+# Backup v4 — ripristino integrale dello storico (branch `feature/backup-v4-storico-completo`)
+
+**Stato: implementata e testata in automatico (PGlite = motore Postgres + driver `pg` reale su Postgres locale Netlify). NON verificata sulla Deploy Preview, NON in produzione. Non va considerata completa finché la verifica reale sulla preview (checklist nel messaggio di consegna) non ha confermato il ripristino integrale.**
+
+## Lacuna chiusa e analisi
+La v3 conservava nel file le correzioni, ma il ripristino ricostruiva solo l'annullamento del prestito (una riga di traccia sintetica, con autore = chi ripristina). Le «restituzioni annullate» e l'ordine delle correzioni andavano perse. Non si poteva risolvere dal client: l'API non permette (giustamente) di scrivere storico arbitrario riga per riga, e farlo con più chiamate avrebbe lasciato stati a metà. Motivazione della scelta architetturale: **un solo endpoint riservato all'admin che riceve prestiti + cronologia e li scrive con UNA sola istruzione SQL** (tutto o niente), dopo la stessa validazione già eseguita dal client.
+
+## Cosa contiene il backup v4
+Schede, MARC21, copie fisiche e, per **ogni prestito** (attivo, concluso, annullato): identificativo originale, destinatario, date, durata, chi e quando lo ha registrato, chi lo ha restituito, annullamento (data, autore, motivo) e la sua **cronologia completa di correzioni** (azione, motivo, autore, data, stato prima/dopo), in ordine cronologico. I contatori `loanCount`, `voidedLoanCount`, `correctionCount` permettono di accorgersi di un file troncato. v1, v2 e v3 restano leggibili (con avviso su cosa non contengono).
+
+## Come funziona il ripristino
+1. **Validazione prima di toccare il database** (`parseBackup`): ogni scheda con le regole del server; ogni prestito con la **stessa funzione del server** (`parseRestoreInput`/`checkLoanHistory`): dati validi, correzioni in ordine di tempo, un prestito annullato ha come ultima correzione proprio quell'annullamento (stesso autore, data, motivo), nessuna correzione dopo l'annullamento, restituzioni annullate coerenti, nessun doppio prestito attivo sulla stessa copia. Se un prestito non è valido il **ripristino dei prestiti è bloccato per intero** (le schede si possono comunque importare da sole): nessuna importazione di prestiti a metà.
+2. **Piano** (`planLoanRestore`, ancora senza scrivere): per ogni prestito dice se è nuovo, **già presente e identico** (stesso id e stessa storia → saltato), **con dati diversi** (stesso id ma diverso nel database → NON sovrascritto, segnalato), **probabile duplicato** (stesso destinatario/data/durata ma id diverso → saltato, segnalato), **bloccato** (la copia è già in prestito a un altro → segnalato) o senza scheda.
+3. **Scrittura atomica** `POST /api/loans/restore` (solo admin, CSRF, ruolo verificato sul server prima di leggere il database): copie mancanti + prestiti + correzioni in un'unica istruzione. Se anche solo un elemento viola un vincolo (scheda inesistente, copia già in prestito) **non viene scritto nulla**. Identificativi già presenti vengono saltati: ripetere il ripristino non crea duplicati.
+4. **Tracciabilità**: autore e data originali restano nelle colonne di sempre; la migrazione additiva `20261016000005_restore_provenance.sql` aggiunge soltanto `restored_at/restored_by` (chi ha eseguito il ripristino e quando) a `loans` e `loan_corrections`. La traccia ripristinata resta immutabile (trigger).
+5. **Verifica finale** (`verifyLoanRestore`): dopo la scrittura l'app rilegge dal database prestiti e correzioni e li confronta col file; mostra «Verifica finale superata» o l'elenco delle differenze.
+6. **Backup precedenti**: v3 → l'annullamento è ricostruito con autore, data e motivo veri del file; v2/v3 non contengono chi ha registrato un prestito (subentra chi ripristina) né le altre correzioni.
+
+## Limiti dichiarati
+- Dopo un ripristino di un backup di una versione precedente alla v4 mancano, per costruzione del file, autori della registrazione e correzioni diverse dall'annullamento.
+- Tutti i prestiti del file entrano in una sola richiesta (massimo 3000 prestiti, 5 MB): oltre, il ripristino è rifiutato con un messaggio (non spezzato, per non perdere l'atomicità).
+- Le schede si ripristinano con richieste separate (ognuna atomica): se il processo si interrompe dopo le schede e prima dei prestiti, basta ripetere l'importazione (le schede già presenti vengono riconosciute e i prestiti si ripristinano).
+- Le date/ore sono salvate al secondo.
+- Id e date di creazione delle schede non si conservano (invariato).
+- I prestiti già presenti con dati diversi non vengono mai sovrascritti: vanno risolti a mano.
+
+## Test (automatici)
+`server/restoreV4.test.ts` (6, Postgres): **andata e ritorno** con prestito attivo, restituito, annullato, restituzione annullata (e poi di nuovo restituito), restituzione annullata + prestito annullato e seconda copia → backup originale e backup ripristinato **equivalenti** (impronta della storia per scheda: id, autori, date, motivi, stati prima/dopo, ordine delle correzioni), disponibilità e stati identici, provenienza registrata, traccia immutabile; importazione ripetuta = nessun duplicato e backup identico; dati diversi non sovrascritti; **atomicità** (un elemento inesistente o in conflitto → zero righe scritte); validazione (cronologia incoerente rifiutata, doppi attivi); permessi (viewer 403, senza sessione 401, senza CSRF 403, nulla scritto); compatibilità v3/v2. `server/pgdriver.test.ts`: lo stesso ripristino col driver `pg` reale, compreso il rollback. `server/import.test.ts` e `server/corrections.test.ts` adeguati.
+
+**Risultati (16 ott 2026, sandbox):** `npx vitest run` → **354 test, 23 file, tutti passati**; `npx tsc --noEmit` senza errori; `npm run build` riuscita. Nuovi: `server/restoreV4.test.ts` (6), un test `pg` reale in `server/pgdriver.test.ts`, 2 test di interfaccia in `src/test/restore.test.tsx`, test adeguati in `server/import.test.ts`. **Nessuna verifica su Deploy Preview eseguita da Claude** (il sandbox non la raggiunge).

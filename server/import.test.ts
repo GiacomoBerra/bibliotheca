@@ -5,7 +5,7 @@ import { createHttpBooksApi } from "../src/lib/api/httpBooksApi";
 import { checkIsbn } from "../src/lib/api/isbn";
 import { BooksApiError } from "../src/lib/api/errors";
 import { emptyBookInput, type BookInput, type BooksApi } from "../src/lib/api/types";
-import { applyLoanRestore, applyRestore, listEveryLoan, parseBackup, planRestore } from "../src/lib/backup";
+import { applyLoanRestore, applyRestore, listEveryLoan, parseBackup, planLoanRestore, planRestore } from "../src/lib/backup";
 import { csvTemplate, MAX_CSV_ROWS, parseCsv, parseCsvCatalog } from "../src/lib/csv";
 import { booksToCsv, booksToJson } from "../src/lib/export";
 import { lookupIsbnList, parseIsbnList } from "../src/lib/isbnImport";
@@ -126,7 +126,7 @@ describe("File di prova [TEST]", () => {
     second.resolution = "crea";
     const r1 = await applyRestore(api, plan);
     expect(r1).toMatchObject({ created: 6, failed: [] });
-    const l1 = await applyLoanRestore(api, p.loans!, r1.idMap);
+    const l1 = await applyLoanRestore(api, await planLoanRestore(api, p.loans!, r1.idMap));
     expect(l1).toMatchObject({ created: 4, duplicates: 0, noBook: 0, failed: [] });
 
     const books = await api.listAllBooks();
@@ -154,7 +154,7 @@ describe("File di prova [TEST]", () => {
     expect(plan2.every((x) => x.resolution === "salta")).toBe(true);
     const r2 = await applyRestore(api, plan2);
     expect(r2).toMatchObject({ created: 0, skipped: 6 });
-    const l2 = await applyLoanRestore(api, p.loans!, r2.idMap);
+    const l2 = await applyLoanRestore(api, await planLoanRestore(api, p.loans!, r2.idMap));
     expect(l2).toMatchObject({ created: 0, duplicates: 4 });
     expect((await api.listAllBooks())).toHaveLength(6);
     expect(await listEveryLoan(api)).toHaveLength(4);
@@ -163,23 +163,23 @@ describe("File di prova [TEST]", () => {
 
 describe("Prestiti nel backup: casi limite", () => {
   const base = { bookTitle: "X", copyNo: 1, borrower: "Anna", contact: "", notes: "", loanDate: "2026-09-01", plannedDays: 14, dueDate: "2026-09-15", returnedDate: "2026-09-10" };
-  it("copia n. 2 non ripristinabile, scheda non importata, prestito attivo già presente: nessun danno, errori chiari", async () => {
+  it("copia n. 2 ripristinata, scheda non importata e prestito attivo in conflitto segnalati: nessun danno, motivi chiari", async () => {
     const api = client(await fresh());
     const b = await api.createBook(book({ title: "Esistente" }));
     await api.createLoan(b.id, { borrower: "Già in prestito", contact: "", loanDate: "2026-10-01", plannedDays: 30, notes: "" });
-    const res = await applyLoanRestore(api, [
+    const plan = await planLoanRestore(api, [
       { ...base, bookId: "id-file-1", copyNo: 2 },
       { ...base, bookId: "id-sconosciuto" },
       { ...base, bookId: "id-file-1", borrower: "Storico" }, // restituito: ammesso anche se ora il libro è in prestito
       { ...base, bookId: "id-file-1", borrower: "Altro attivo", loanDate: "2026-10-05", returnedDate: null, dueDate: "2026-11-04", plannedDays: 30 },
     ], { "id-file-1": b.id });
-    expect(res.created).toBe(1);
-    expect(res.noBook).toBe(1);
-    expect(res.failed).toHaveLength(2);
-    expect(res.failed.map((f) => f.message).join(" ")).toMatch(/copia n\. 2/);
-    expect(res.failed.map((f) => f.message).join(" ")).toMatch(/già in prestito/);
+    expect(plan.blocked).toHaveLength(1);
+    expect(plan.blocked[0]!.reason).toMatch(/già in prestito/);
+    const res = await applyLoanRestore(api, plan);
+    expect(res).toMatchObject({ created: 2, noBook: 1, blocked: 1, failed: [] });
     const h = await api.listBookLoans(b.id);
-    expect(h.loans.map((l) => l.borrower).sort()).toEqual(["Già in prestito", "Storico"]);
+    expect(h.loans.map((l) => l.borrower).sort()).toEqual(["Anna", "Già in prestito", "Storico"]);
+    expect(h.loans.find((l) => l.borrower === "Anna")!.copyNo).toBe(2);
   });
   it("API: prestito già concluso — date coerenti e nessun conflitto con un prestito attivo; date incoerenti rifiutate", async () => {
     const api = client(await fresh());

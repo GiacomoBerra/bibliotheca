@@ -3,7 +3,7 @@ import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
 import * as loansRepo from "./loansRepo";
-import { LOAN_FILTERS, parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso, type LoanFilter } from "../src/lib/api/loans";
+import { LOAN_FILTERS, parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseRestoreInput, parseReturnInput, todayIso, type LoanFilter } from "../src/lib/api/loans";
 import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
@@ -52,9 +52,9 @@ function csrfOk(req: Request): boolean {
   return true;
 }
 
-async function readJson(req: Request): Promise<{ ok: true; value: unknown } | { ok: false; res: Response }> {
+async function readJson(req: Request, max = MAX_BODY): Promise<{ ok: true; value: unknown } | { ok: false; res: Response }> {
   const text = await req.text();
-  if (text.length > MAX_BODY) return { ok: false, res: fail(413, "too_large", "La richiesta è troppo grande.") };
+  if (text.length > max) return { ok: false, res: fail(413, "too_large", "La richiesta è troppo grande.") };
   try {
     return { ok: true, value: JSON.parse(text) };
   } catch {
@@ -136,6 +136,15 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       return fail(405, "method", "Metodo non consentito.");
     }
     if (resource === "loans") {
+      // Ripristino di prestiti e cronologia da un backup: tutto o niente, solo admin (il viewer è già fermato sopra).
+      if (id === "restore" && !sub) {
+        if (req.method !== "POST") return fail(405, "method", "Metodo non consentito.");
+        const body = await readJson(req, 5_000_000);
+        if (!body.ok) return body.res;
+        const parsed = parseRestoreInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", `${parsed.message} Nulla è stato scritto.`);
+        try { return json(200, await loansRepo.restoreLoans(db, userId, parsed.value)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
       if (!id && !sub) {
         if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");
         return json(200, await loansRepo.listLoans(db, parseLoanListOptions(url.searchParams), today));

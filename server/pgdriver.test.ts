@@ -61,6 +61,26 @@ describe("Driver pg di produzione su Postgres locale Netlify", () => {
     expect(v.json.loans[0].borrower).toBeNull();
     expect((await call("GET", "/api/loans", { user: "v1", roles: ["viewer"] })).status).toBe(403);
   });
+  it("ripristino v4 con driver reale: prestito con due correzioni, ordine conservato, provenienza e atomicità", async () => {
+    const b = await call("POST", "/api/books", { user: "u1", body: { title: "Ripristino pg" } });
+    const bad = { bookId: b.json.id, id: "55555555-5555-4555-8555-555555555555", copyNo: 1, borrower: "A", contact: "", notes: "", loanDate: "2026-09-01", plannedDays: 10, returnedDate: null,
+      createdBy: "orig", createdAt: "2026-09-01T08:00:00Z", voided: { at: "2026-09-04T10:00:00Z", by: "orig2", reason: "errore" },
+      corrections: [
+        { action: "annulla_restituzione", reason: "prima", correctedBy: "orig2", correctedAt: "2026-09-03T10:00:00Z", before: { state: "restituito", returnedDate: "2026-09-02", returnedBy: "orig", voided: false }, after: { state: "attivo", returnedDate: null, returnedBy: null, voided: false } },
+        { action: "annulla_prestito", reason: "errore", correctedBy: "orig2", correctedAt: "2026-09-04T10:00:00Z", before: { state: "attivo", returnedDate: null, returnedBy: null, voided: false }, after: { state: "annullato", returnedDate: null, returnedBy: null, voided: true } },
+      ] };
+    const r = await call("POST", "/api/loans/restore", { user: "restorer", body: { loans: [bad] } });
+    expect(r.json).toMatchObject({ created: 1, corrections: 2, skipped: 0 });
+    const c = await call("GET", `/api/loans/${bad.id}/corrections`, { user: "u1" });
+    expect(c.json.items.map((x: { reason: string }) => x.reason)).toEqual(["errore", "prima"]); // dalla più recente
+    const l = await call("GET", `/api/loans/${bad.id}`, { user: "u1" });
+    expect(l.json).toMatchObject({ state: "annullato", createdBy: "orig", createdAt: "2026-09-01T08:00:00Z", voidedBy: "orig2" });
+    expect((await call("POST", "/api/loans/restore", { user: "restorer", body: { loans: [bad] } })).json).toMatchObject({ created: 0, skipped: 1 });
+    const other = { ...bad, id: "66666666-6666-4666-8666-666666666666" };
+    const fail = await call("POST", "/api/loans/restore", { user: "restorer", body: { loans: [other, { ...other, id: "77777777-7777-4777-8777-777777777777", bookId: "88888888-8888-4888-8888-888888888888" }] } });
+    expect(fail.status).toBe(404);
+    expect((await call("GET", `/api/loans/${other.id}`, { user: "u1" })).status).toBe(404);
+  });
   it("le migrazioni sono state applicate dal motore di Netlify (schema atteso)", async () => {
     const client = new pg.Client({ connectionString });
     await client.connect();
