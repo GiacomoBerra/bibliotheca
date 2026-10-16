@@ -1,4 +1,5 @@
 import { BOOK_COLUMNS, bookToRow, escapeLike, rowToBook, searchTerms, type BookRow } from "../src/lib/api/mapping";
+import { LOAN_FILTERS, summarizeAvailability, todayIso, type BookAvailability } from "../src/lib/api/loans";
 import { BOOK_STATUSES, type Book, type BookInput, type BookPage, type BookStatus, type CatalogStats, type ListOptions, type SortKey } from "../src/lib/api/types";
 import type { Db } from "./db";
 
@@ -21,7 +22,21 @@ const ORDER: Record<SortKey, string> = {
 
 export const DEFAULT_PAGE_SIZE = 25;
 
-export async function listBooks(db: Db, o: ListOptions = {}): Promise<BookPage> {
+const ACTIVE = `l.book_id = books.id and l.returned_date is null and l.voided_at is null`;
+// Copie totali: almeno 1; la copia n. 1 nasce al primo prestito, quindi si considera anche il numero di copia più alto.
+const SQL_TOTAL = `greatest(1, (select count(*) from book_copies c where c.book_id = books.id), (select coalesce(max(c.copy_no), 0) from book_copies c where c.book_id = books.id))`;
+const SQL_ACTIVE = `(select count(*) from loans l where ${ACTIVE})`;
+const sqlLate = (todayParam: string) => `(select count(*) from loans l where ${ACTIVE} and l.due_date < ${todayParam}::date)`;
+
+/** Stato prestito dei libri indicati, con UNA sola query (non una per libro). Solo prestiti attivi e non annullati. */
+async function availabilityFor(db: Db, ids: string[], today: string): Promise<Record<string, BookAvailability>> {
+  if (ids.length === 0) return {};
+  const r = await db.query<{ id: string; total: string; active: string; late: string }>(
+    `select id, ${SQL_TOTAL} as total, ${SQL_ACTIVE} as active, ${sqlLate("$2")} as late from books where id = any($1::uuid[])`, [ids, today]);
+  return Object.fromEntries(r.rows.map((x) => [x.id, summarizeAvailability(Number(x.total), Number(x.active), Number(x.late))]));
+}
+
+export async function listBooks(db: Db, o: ListOptions = {}, today: string = todayIso()): Promise<BookPage> {
   const pageSize = Math.min(Math.max(Math.trunc(o.pageSize ?? DEFAULT_PAGE_SIZE) || DEFAULT_PAGE_SIZE, 1), 100);
   const page = Math.max(Math.trunc(o.page ?? 1) || 1, 1);
   const sort: SortKey = o.sort && o.sort in ORDER ? o.sort : "aggiornamento";
@@ -37,13 +52,22 @@ export async function listBooks(db: Db, o: ListOptions = {}): Promise<BookPage> 
     params.push(o.status);
     where.push(`status = $${params.length}`);
   }
+  if (o.loan && (LOAN_FILTERS as readonly string[]).includes(o.loan) && o.loan !== "tutti") {
+    // il parametro «oggi» si aggiunge solo quando serve: un parametro non usato fa fallire la query
+    const late = () => { params.push(today); return sqlLate(`$${params.length}`); };
+    where.push(o.loan === "disponibili" ? `${SQL_ACTIVE} = 0`
+      : o.loan === "in ritardo" ? `${late()} > 0`
+      : o.loan === "parziale" ? `${late()} = 0 and ${SQL_ACTIVE} > 0 and ${SQL_ACTIVE} < ${SQL_TOTAL}`
+      : `${late()} = 0 and ${SQL_ACTIVE} > 0 and ${SQL_ACTIVE} >= ${SQL_TOTAL}`);
+  }
   const clause = where.join(" and ");
   const total = Number((await db.query<{ n: string }>(`select count(*) as n from books where ${clause}`, params)).rows[0]?.n ?? 0);
   const rows = await db.query<BookRow>(
     `select ${BOOK_COLUMNS} from books where ${clause} order by ${ORDER[sort]} ${dir} nulls last, id limit ${pageSize} offset ${(page - 1) * pageSize}`,
     params,
   );
-  return { items: rows.rows.map(rowToBook), total, page, pageSize };
+  const items = rows.rows.map(rowToBook);
+  return { items, total, page, pageSize, availability: await availabilityFor(db, items.map((b) => b.id), today) };
 }
 
 export async function getBook(db: Db, id: string): Promise<Book | null> {

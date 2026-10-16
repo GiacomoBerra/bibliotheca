@@ -3,7 +3,7 @@ import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
 import * as loansRepo from "./loansRepo";
-import { parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso } from "../src/lib/api/loans";
+import { LOAN_FILTERS, parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso, type LoanFilter } from "../src/lib/api/loans";
 import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
@@ -71,6 +71,8 @@ function listOptions(url: URL): ListOptions {
   if (sort && ["aggiornamento", "titolo", "autore", "anno"].includes(sort)) o.sort = sort as SortKey;
   if (dir === "asc" || dir === "desc") o.dir = dir as SortDir;
   if (status === "tutti" || (status && (BOOK_STATUSES as readonly string[]).includes(status))) o.status = status as NonNullable<ListOptions["status"]>;
+  const loan = q.get("loan");
+  if (loan && (LOAN_FILTERS as readonly string[]).includes(loan)) o.loan = loan as LoanFilter;
   return o;
 }
 
@@ -187,7 +189,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       return req.method === "GET" ? json(200, { books: await repo.listAllBooks(db) }) : fail(405, "method", "Metodo non consentito.");
     }
     if (resource === "books" && !id) {
-      if (req.method === "GET") return json(200, await repo.listBooks(db, listOptions(url)));
+      if (req.method === "GET") return json(200, await repo.listBooks(db, listOptions(url), deps.today?.() ?? todayIso()));
       if (req.method === "POST") {
         const body = await readJson(req);
         if (!body.ok) return body.res;

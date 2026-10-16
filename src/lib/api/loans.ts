@@ -5,6 +5,28 @@ export type LoanState = (typeof LOAN_STATES)[number];
 /** Disponibilità di un libro: derivata dai prestiti, mai memorizzata. */
 export type Availability = "disponibile" | "in prestito" | "restituzione in ritardo";
 
+/** Stato di disponibilità di un libro nell'elenco del catalogo (tutte le copie fisiche considerate). */
+export const CATALOG_LOAN_STATES = ["disponibile", "in prestito", "in ritardo", "disponibilità parziale"] as const;
+export type CatalogLoanState = (typeof CATALOG_LOAN_STATES)[number];
+export interface BookAvailability { state: CatalogLoanState; totalCopies: number; availableCopies: number }
+/** Filtro per disponibilità del catalogo. */
+export const LOAN_FILTERS = ["tutti", "disponibili", "in prestito", "in ritardo", "parziale"] as const;
+export type LoanFilter = (typeof LOAN_FILTERS)[number];
+
+/**
+ * Regola unica (server, test e interfaccia). `total` = copie fisiche (minimo 1: ogni libro ha almeno una copia, anche
+ * se non è mai stata prestata), `active` = copie con un prestito attivo e non annullato, `late` = di queste, quelle con
+ * data prevista di restituzione già trascorsa (vedi `loanState`: il giorno stesso della scadenza NON è ancora ritardo).
+ * Priorità: in ritardo (almeno una copia scaduta) > disponibilità parziale (alcune copie libere, altre fuori) >
+ * in prestito (tutte le copie fuori, nessuna scaduta) > disponibile.
+ */
+export function summarizeAvailability(total: number, active: number, late: number): BookAvailability {
+  const t = Math.max(1, Math.trunc(total) || 1);
+  const a = Math.min(Math.max(Math.trunc(active) || 0, 0), t);
+  const state: CatalogLoanState = a === 0 ? "disponibile" : late > 0 ? "in ritardo" : a < t ? "disponibilità parziale" : "in prestito";
+  return { state, totalCopies: t, availableCopies: t - a };
+}
+
 export const LOAN_LIMITS = { borrower: 200, contact: 200, notes: 1000, minDays: 1, maxDays: 365, defaultDays: 30 } as const;
 
 export interface Loan {

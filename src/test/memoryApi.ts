@@ -1,6 +1,6 @@
 import { BooksApiError } from "@/lib/api/errors";
 import { emptyBookInput, type Book, type BookInput, type BooksApi, type ListOptions } from "@/lib/api/types";
-import { addDays, availabilityOf, daysBetween, loanDerived, parseCorrectionInput, parseLoanEdit, parseLoanInput, type Loan, type LoanCorrection } from "@/lib/api/loans";
+import { addDays, availabilityOf, summarizeAvailability, type BookAvailability, daysBetween, loanDerived, parseCorrectionInput, parseLoanEdit, parseLoanInput, type Loan, type LoanCorrection } from "@/lib/api/loans";
 import { searchTerms } from "@/lib/api/mapping";
 
 export function makeBook(over: Partial<Book> & { id: string; title: string }): Book {
@@ -18,11 +18,19 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
   const lid = () => `loan-${loans.length + 1}`;
   const refresh = (l: Loan): Loan => ({ ...l, ...loanDerived(l, today) });
   let corrections: LoanCorrection[] = [];
+  const forced: Record<string, BookAvailability> = {};
+  const availOf = (bookId: string): BookAvailability => {
+    if (forced[bookId]) return forced[bookId]!;
+    const act = loans.filter((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt).map(refresh);
+    return summarizeAvailability(1, act.length, act.filter((l) => l.state === "in ritardo").length);
+  };
   const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null } : l);
   const nCorr = (l: Loan): Loan => ({ ...l, correctionCount: corrections.filter((c) => c.loanId === l.id).length });
-  const api: BooksApi & { all(): Book[]; allLoans(): Loan[] } = {
+  const api: BooksApi & { all(): Book[]; allLoans(): Loan[]; forceAvailability(bookId: string, a: BookAvailability): void } = {
     all: () => books,
     allLoans: () => loans,
+    /** Prova delle schermate con più copie fisiche (il modello dati le prevede; l'interfaccia non le crea ancora). */
+    forceAvailability: (bookId: string, a: BookAvailability) => { forced[bookId] = a; },
     async listBookLoans(bookId) {
       fail();
       const mine = loans.filter((l) => l.bookId === bookId).map(refresh).map(nCorr).sort((a, b) => (a.loanDate < b.loanDate ? 1 : -1));
@@ -108,11 +116,16 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       fail();
       let r = books.filter((b) => searchTerms(o.query ?? "").every((t) => text(b).includes(t)));
       if (o.status && o.status !== "tutti") r = r.filter((b) => b.status === o.status);
+      if (o.loan && o.loan !== "tutti") {
+        const want = { disponibili: "disponibile", "in prestito": "in prestito", "in ritardo": "in ritardo", parziale: "disponibilità parziale" }[o.loan];
+        r = r.filter((b) => availOf(b.id).state === want);
+      }
       const key = o.sort === "titolo" ? (b: Book) => b.title : o.sort === "anno" ? (b: Book) => b.publicationYear : (b: Book) => b.updatedAt;
       const dir = (o.dir ?? "asc") === "asc" ? 1 : -1;
       r = [...r].sort((a, b) => (key(a) < key(b) ? -dir : key(a) > key(b) ? dir : 0));
       const pageSize = o.pageSize ?? 25, page = o.page ?? 1;
-      return { items: r.slice((page - 1) * pageSize, page * pageSize), total: r.length, page, pageSize };
+      const items = r.slice((page - 1) * pageSize, page * pageSize);
+      return { items, total: r.length, page, pageSize, availability: Object.fromEntries(items.map((b) => [b.id, availOf(b.id)])) };
     },
     async getBook(id) { fail(); return books.find((b) => b.id === id) ?? null; },
     async createBook(input: BookInput) {

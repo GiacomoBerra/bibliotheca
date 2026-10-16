@@ -1,4 +1,4 @@
-import type { BookLoans, Loan, LoanCorrection, LoanEditInput, LoanInput, LoanListOptions, LoanPage } from "./loans";
+import type { BookAvailability, BookLoans, Loan, LoanFilter, LoanCorrection, LoanEditInput, LoanInput, LoanListOptions, LoanPage } from "./loans";
 import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
 
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
@@ -56,6 +56,8 @@ export type SortDir = "asc" | "desc";
 export interface ListOptions {
   query?: string;
   status?: BookStatus | "tutti";
+  /** filtro per disponibilità (prestiti attivi e non annullati, tutte le copie) */
+  loan?: LoanFilter;
   sort?: SortKey;
   dir?: SortDir;
   /** pagina da 1 */
@@ -63,7 +65,8 @@ export interface ListOptions {
   pageSize?: number;
 }
 
-export interface BookPage { items: Book[]; total: number; page: number; pageSize: number }
+/** `availability`: stato prestito di ogni libro della pagina, indicizzato per id (nessun dato personale: visibile anche al visualizzatore). */
+export interface BookPage { items: Book[]; total: number; page: number; pageSize: number; availability: Record<string, BookAvailability> }
 
 export interface CatalogStats {
   total: number;

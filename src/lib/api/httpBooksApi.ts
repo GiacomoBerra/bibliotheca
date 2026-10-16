@@ -47,6 +47,7 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
     const p = new URLSearchParams();
     if (o.query?.trim()) p.set("query", o.query);
     if (o.status && o.status !== "tutti") p.set("status", o.status);
+    if (o.loan && o.loan !== "tutti") p.set("loan", o.loan);
     if (o.sort) p.set("sort", o.sort);
     if (o.dir) p.set("dir", o.dir);
     if (o.page) p.set("page", String(o.page));

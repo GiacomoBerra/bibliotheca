@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookPlus, Library, Search, SearchX } from "lucide-react";
 import { selectClass } from "@/components/app/BookForm";
+import { AvailabilityBadge } from "@/components/app/LoanBits";
 import { EmptyState, ErrorBox, Loading, PageHeader, StatusPill } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
+import type { LoanFilter } from "@/lib/api/loans";
 import { BOOK_STATUSES, type BookStatus, type SortDir, type SortKey } from "@/lib/api/types";
 import { useAsync } from "@/lib/useAsync";
 
@@ -34,18 +36,25 @@ function Catalogo() {
   const api = useBooksApi();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<BookStatus | "tutti">("tutti");
+  const [loan, setLoan] = useState<LoanFilter>("tutti");
   const [sort, setSort] = useState<SortKey>("aggiornamento");
   const [dir, setDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
   const dq = useDebounced(q);
 
-  useEffect(() => { setPage(1); }, [dq, status, sort, dir]);
+  useEffect(() => { setPage(1); }, [dq, status, loan, sort, dir]);
 
   const { data, error, loading, reload } = useAsync(
-    () => api.listBooks({ query: dq, status, sort, dir, page, pageSize: PAGE_SIZE }),
-    [api, dq, status, sort, dir, page],
+    () => api.listBooks({ query: dq, status, loan, sort, dir, page, pageSize: PAGE_SIZE }),
+    [api, dq, status, loan, sort, dir, page],
   );
-  const filtering = dq.trim() !== "" || status !== "tutti";
+  // Dopo un prestito o una restituzione fatti in un'altra scheda o scheda del browser, tornando qui lo stato si aggiorna da solo.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") reload(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [reload]);
+  const filtering = dq.trim() !== "" || status !== "tutti" || loan !== "tutti";
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   function onSort(v: SortKey) {
@@ -60,7 +69,7 @@ function Catalogo() {
         description="Cerca per titolo, autore, ISBN, editore, soggetto, Dewey o collocazione."
         actions={isAdmin ? <Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button> : undefined}
       />
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_11rem_12rem_9rem]">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_10rem_11rem_11rem_9rem]">
         <div className="space-y-1.5">
           <Label htmlFor="cerca">Cerca nel catalogo</Label>
           <div className="relative">
@@ -73,6 +82,16 @@ function Catalogo() {
           <select id="stato" className={selectClass} value={status} onChange={(e) => setStatus(e.target.value as BookStatus | "tutti")}>
             <option value="tutti">Tutti</option>
             {BOOK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="disponibilita">Disponibilità</Label>
+          <select id="disponibilita" className={selectClass} value={loan} onChange={(e) => setLoan(e.target.value as LoanFilter)}>
+            <option value="tutti">Tutti</option>
+            <option value="disponibili">Disponibili</option>
+            <option value="in prestito">In prestito</option>
+            <option value="in ritardo">In ritardo</option>
+            <option value="parziale">Disponibilità parziale</option>
           </select>
         </div>
         <div className="space-y-1.5">
@@ -104,7 +123,7 @@ function Catalogo() {
       ) : data && data.total === 0 ? (
         filtering ? (
           <EmptyState icon={SearchX} title="Nessun risultato" text="Nessun libro corrisponde ai criteri. Prova con meno parole, cambia lo stato o controlla l'ISBN."
-            action={<Button variant="outline" onClick={() => { setQ(""); setStatus("tutti"); }}>Azzera ricerca e filtri</Button>} />
+            action={<Button variant="outline" onClick={() => { setQ(""); setStatus("tutti"); setLoan("tutti"); }}>Azzera ricerca e filtri</Button>} />
         ) : (
           <EmptyState icon={Library} title="Il catalogo è vuoto" text={isAdmin ? "Aggiungi la prima scheda: basta il titolo, il resto si può completare in seguito." : "Non ci sono ancora schede nel catalogo."}
             action={isAdmin ? <Button asChild><Link to="/catalogo/nuovo"><BookPlus aria-hidden /> Aggiungi libro</Link></Button> : undefined} />
@@ -121,6 +140,7 @@ function Catalogo() {
                   <th scope="col" className="px-4 py-3 font-semibold">ISBN</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Anno</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Stato</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Stato prestito</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +151,7 @@ function Catalogo() {
                     <td className="px-4 py-3 font-mono text-xs">{b.isbn || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3">{b.publicationYear || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3"><StatusPill status={b.status} /></td>
+                    <td className="px-4 py-3">{data.availability[b.id] ? <AvailabilityBadge value={data.availability[b.id]!} /> : <span className="text-muted-foreground">—</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -146,6 +167,7 @@ function Catalogo() {
                     <span className="font-mono text-xs text-muted-foreground">{b.isbn}</span>
                     <StatusPill status={b.status} />
                   </div>
+                  {data.availability[b.id] && <div className="mt-2"><AvailabilityBadge value={data.availability[b.id]!} /></div>}
                 </Link>
               </li>
             ))}
