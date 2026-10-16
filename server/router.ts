@@ -3,7 +3,7 @@ import { BOOK_STATUSES, type ListOptions, type SortDir, type SortKey } from "../
 import type { Db } from "./db";
 import * as repo from "./booksRepo";
 import * as loansRepo from "./loansRepo";
-import { parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso } from "../src/lib/api/loans";
+import { parseCorrectionInput, parseLoanEdit, parseLoanInput, parseLoanListOptions, parseReturnInput, todayIso } from "../src/lib/api/loans";
 import { LookupError, parseLookupQuery, type Lookup } from "./sources/lookup";
 
 export interface Principal { id: string; roles: readonly string[] }
@@ -78,10 +78,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "");
-    const m = /^\/api\/(books|stats|export|lookup|loans)(?:\/([^/]+)(?:\/(loans|return))?)?$/.exec(path);
+    const m = /^\/api\/(books|stats|export|lookup|loans)(?:\/([^/]+)(?:\/(loans|return|void|undo-return|corrections))?)?$/.exec(path);
     if (!m) return fail(404, "not_found", "Risorsa inesistente.");
-    const [, resource, id, sub] = m as unknown as [string, string, string | undefined, "loans" | "return" | undefined];
-    if ((sub === "loans" && resource !== "books") || (sub === "return" && resource !== "loans")) return fail(404, "not_found", "Risorsa inesistente.");
+    const [, resource, id, sub] = m as unknown as [string, string, string | undefined, "loans" | "return" | "void" | "undo-return" | "corrections" | undefined];
+    if ((sub === "loans" && resource !== "books") || (sub && sub !== "loans" && resource !== "loans")) return fail(404, "not_found", "Risorsa inesistente.");
 
     // 1. CSRF  2. Autenticazione  3. Ruolo (autorizzazione, PRIMA di qualsiasi accesso ai dati)  4. Database
     if (!csrfOk(req)) return fail(403, "csrf", "Richiesta non consentita da questo indirizzo.");
@@ -145,6 +145,22 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         const parsed = parseReturnInput(body.value);
         if (!parsed.ok) return fail(400, "validation", "La data di restituzione non è valida.", parsed.errors);
         try { return json(200, await loansRepo.returnLoan(db, userId, id, parsed.value.returnedDate, today)); } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      if (id && (sub === "void" || sub === "undo-return")) {
+        if (req.method !== "POST") return fail(405, "method", "Metodo non consentito.");
+        const body = await readJson(req);
+        if (!body.ok) return body.res;
+        const parsed = parseCorrectionInput(body.value);
+        if (!parsed.ok) return fail(400, "validation", "Indica il motivo della correzione.", parsed.errors);
+        try {
+          const l = sub === "void" ? await loansRepo.voidLoan(db, userId, id, parsed.value.reason, today) : await loansRepo.undoReturn(db, userId, id, parsed.value.reason, today);
+          return json(200, l);
+        } catch (e) { const r = asLoanError(e); if (r) return r; throw e; }
+      }
+      if (id && sub === "corrections") {
+        if (req.method !== "GET") return fail(405, "method", "Metodo non consentito.");
+        const c = await loansRepo.listCorrections(db, id);
+        return c ? json(200, { items: c }) : fail(404, "not_found", "Prestito non trovato.");
       }
       if (id && !sub) {
         if (req.method === "GET") {

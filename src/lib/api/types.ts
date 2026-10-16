@@ -1,4 +1,4 @@
-import type { BookLoans, Loan, LoanEditInput, LoanInput, LoanListOptions, LoanPage } from "./loans";
+import type { BookLoans, Loan, LoanCorrection, LoanEditInput, LoanInput, LoanListOptions, LoanPage } from "./loans";
 import type { LookupQuery, LookupResponse } from "@/lib/sources/types";
 
 export const BOOK_STATUSES = ["bozza", "da revisionare", "catalogato"] as const;
@@ -92,6 +92,12 @@ export interface BooksApi {
   /** `returnedDate` assente = oggi. Non cancella il prestito. */
   returnLoan(loanId: string, returnedDate?: string): Promise<Loan>;
   updateLoan(loanId: string, input: LoanEditInput): Promise<Loan>;
+  /** Annulla un prestito registrato per errore (resta nello storico, con motivo e traccia). Solo admin. */
+  voidLoan(loanId: string, reason: string): Promise<Loan>;
+  /** Annulla la registrazione di una restituzione: il prestito torna attivo, se la copia non è stata prestata di nuovo. Solo admin. */
+  undoLoanReturn(loanId: string, reason: string): Promise<Loan>;
+  /** Traccia delle correzioni di un prestito, dalla più recente. Solo admin. */
+  listLoanCorrections(loanId: string): Promise<LoanCorrection[]>;
 }
 
 export function emptyBookInput(): BookInput {

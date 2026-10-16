@@ -103,7 +103,7 @@ function Dettaglio({ book: b }: { book: Book }) {
         </dl>
       </section>
 
-      <BookLoans bookId={b.id} isAdmin={isAdmin} />
+      <BookLoans bookId={b.id} bookTitle={b.title} isAdmin={isAdmin} />
 
       <MarcView book={b} />
 

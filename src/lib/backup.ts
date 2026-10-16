@@ -186,7 +186,7 @@ export async function applyLoanRestore(api: Pick<BooksApi, "createLoan" | "listB
       if (!target) res.noBook++;
       else if (l.copyNo !== 1) res.failed.push({ label, message: `copia n. ${l.copyNo}: l'app gestisce per ora solo la copia n. 1, il prestito non è stato ripristinato.` });
       else {
-        if (!existing.has(target)) existing.set(target, new Set((await api.listBookLoans(target)).loans.map(loanKey)));
+        if (!existing.has(target)) existing.set(target, new Set((await api.listBookLoans(target)).loans.filter((x) => x.state !== "annullato").map(loanKey)));
         const seen = existing.get(target)!;
         if (seen.has(loanKey(l))) res.duplicates++;
         else {

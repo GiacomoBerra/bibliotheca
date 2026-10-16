@@ -6,6 +6,7 @@ const cls: Record<string, string> = {
   "restituzione in ritardo": "bg-destructive/15 text-destructive",
   "in ritardo": "bg-destructive/15 text-destructive",
   restituito: "bg-muted text-muted-foreground",
+  annullato: "border border-dashed text-muted-foreground line-through",
 };
 
 /** Il testo dello stato è sempre scritto (non affidato solo al colore). */
@@ -16,6 +17,7 @@ export function LoanPill({ value }: { value: Availability | LoanState }) {
 export const fmtDate = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
 
 export function durationText(l: Loan): string {
+  if (l.state === "annullato") return "—";
   if (l.effectiveDays !== null) {
     const d = `${l.effectiveDays} ${l.effectiveDays === 1 ? "giorno" : "giorni"}`;
     return l.daysLate > 0 ? `${d} (${l.daysLate} di ritardo)` : d;

@@ -1,6 +1,6 @@
 import { BooksApiError } from "@/lib/api/errors";
 import { emptyBookInput, type Book, type BookInput, type BooksApi, type ListOptions } from "@/lib/api/types";
-import { addDays, availabilityOf, daysBetween, loanDerived, parseLoanEdit, parseLoanInput, type Loan } from "@/lib/api/loans";
+import { addDays, availabilityOf, daysBetween, loanDerived, parseCorrectionInput, parseLoanEdit, parseLoanInput, type Loan, type LoanCorrection } from "@/lib/api/loans";
 import { searchTerms } from "@/lib/api/mapping";
 
 export function makeBook(over: Partial<Book> & { id: string; title: string }): Book {
@@ -17,22 +17,25 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
   let loans: Loan[] = [];
   const lid = () => `loan-${loans.length + 1}`;
   const refresh = (l: Loan): Loan => ({ ...l, ...loanDerived(l, today) });
-  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null } : l);
+  let corrections: LoanCorrection[] = [];
+  const redact = (l: Loan): Loan => (opts.role === "viewer" ? { ...l, borrower: null, contact: null, notes: null, voidReason: null } : l);
+  const nCorr = (l: Loan): Loan => ({ ...l, correctionCount: corrections.filter((c) => c.loanId === l.id).length });
   const api: BooksApi & { all(): Book[]; allLoans(): Loan[] } = {
     all: () => books,
     allLoans: () => loans,
     async listBookLoans(bookId) {
       fail();
-      const mine = loans.filter((l) => l.bookId === bookId).map(refresh).sort((a, b) => (a.loanDate < b.loanDate ? 1 : -1));
+      const mine = loans.filter((l) => l.bookId === bookId).map(refresh).map(nCorr).sort((a, b) => (a.loanDate < b.loanDate ? 1 : -1));
       return { availability: availabilityOf(mine), loans: mine.map(redact) };
     },
     async listLoans(o = {}) {
       fail();
-      let r = loans.map(refresh);
+      let r = loans.map(refresh).map(nCorr);
       if (o.borrower) r = r.filter((l) => (l.borrower ?? "").toLowerCase().includes(o.borrower!.toLowerCase()));
-      if (o.state === "attivi") r = r.filter((l) => !l.returnedDate);
+      if (o.state === "attivi") r = r.filter((l) => !l.returnedDate && !l.voidedAt);
+      if (o.state === "annullati") r = r.filter((l) => l.voidedAt);
       if (o.state === "in ritardo") r = r.filter((l) => l.state === "in ritardo");
-      if (o.state === "restituiti") r = r.filter((l) => l.returnedDate);
+      if (o.state === "restituiti") r = r.filter((l) => l.returnedDate && !l.voidedAt);
       if (o.from) r = r.filter((l) => l.loanDate >= o.from!);
       if (o.to) r = r.filter((l) => l.loanDate <= o.to!);
       return { items: r, total: r.length, page: 1, pageSize: 25 };
@@ -43,9 +46,9 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       if (!p.ok) throw new BooksApiError("validation", Object.values(p.errors).join(" "));
       const book = books.find((b) => b.id === bookId);
       if (!book) throw new BooksApiError("notfound", "Il libro non esiste più.");
-      if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
+      if (!input.returnedDate && loans.some((l) => l.bookId === bookId && !l.returnedDate && !l.voidedAt)) throw new BooksApiError("conflict", "Questa copia risulta già in prestito: registra prima la restituzione.");
       const dueDate = addDays(input.loanDate, input.plannedDays);
-      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0 });
+      const l = refresh({ id: lid(), bookId, bookTitle: book.title, copyId: `copy-${bookId}`, copyNo: 1, borrower: input.borrower.trim(), contact: input.contact.trim() || null, notes: input.notes.trim() || null, loanDate: input.loanDate, plannedDays: input.plannedDays, dueDate, returnedDate: input.returnedDate ?? null, state: "in prestito", effectiveDays: null, daysLate: 0, voidedAt: null, voidReason: null, correctionCount: 0 });
       loans = [l, ...loans];
       return l;
     },
@@ -53,12 +56,43 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       fail();
       const cur = loans.find((l) => l.id === id);
       if (!cur) throw new BooksApiError("notfound", "Prestito non trovato.");
+      if (cur.voidedAt) throw new BooksApiError("conflict", "Questo prestito è stato annullato.");
       if (cur.returnedDate) throw new BooksApiError("conflict", "Questo prestito è già stato restituito.");
       const date = returnedDate ?? today;
       if (daysBetween(cur.loanDate, date) < 0) throw new BooksApiError("validation", "La restituzione non può precedere l'inizio del prestito.");
       const l = refresh({ ...cur, returnedDate: date });
       loans = loans.map((x) => (x.id === id ? l : x));
       return l;
+    },
+    async voidLoan(id, reason) {
+      fail();
+      const p = parseCorrectionInput({ reason });
+      if (!p.ok) throw new BooksApiError("validation", Object.values(p.errors).join(" "));
+      const cur = loans.find((l) => l.id === id);
+      if (!cur) throw new BooksApiError("notfound", "Prestito non trovato.");
+      if (cur.voidedAt) throw new BooksApiError("conflict", "Questo prestito risulta già annullato.");
+      const after = refresh({ ...cur, voidedAt: "2026-10-15T10:00:00Z", voidReason: p.value.reason });
+      loans = loans.map((x) => (x.id === id ? after : x));
+      corrections = [{ id: `c-${corrections.length + 1}`, loanId: id, action: "annulla_prestito", reason: p.value.reason, correctedBy: "admin", correctedAt: "2026-10-15T10:00:00Z", before: { state: cur.returnedDate ? "restituito" : "attivo", returnedDate: cur.returnedDate, returnedBy: null, voided: false }, after: { state: "annullato", returnedDate: cur.returnedDate, returnedBy: null, voided: true } }, ...corrections];
+      return nCorr(after);
+    },
+    async undoLoanReturn(id, reason) {
+      fail();
+      const p = parseCorrectionInput({ reason });
+      if (!p.ok) throw new BooksApiError("validation", Object.values(p.errors).join(" "));
+      const cur = loans.find((l) => l.id === id);
+      if (!cur) throw new BooksApiError("notfound", "Prestito non trovato.");
+      if (cur.voidedAt) throw new BooksApiError("conflict", "Questo prestito è stato annullato.");
+      if (!cur.returnedDate) throw new BooksApiError("conflict", "Questo prestito non risulta restituito.");
+      if (loans.some((l) => l.id !== id && l.bookId === cur.bookId && !l.voidedAt && l.loanDate >= cur.loanDate)) throw new BooksApiError("conflict", "Non si può annullare la restituzione: la copia è stata prestata di nuovo.");
+      const after = refresh({ ...cur, returnedDate: null });
+      loans = loans.map((x) => (x.id === id ? after : x));
+      corrections = [{ id: `c-${corrections.length + 1}`, loanId: id, action: "annulla_restituzione", reason: p.value.reason, correctedBy: "admin", correctedAt: "2026-10-15T10:00:00Z", before: { state: "restituito", returnedDate: cur.returnedDate, returnedBy: "admin", voided: false }, after: { state: "attivo", returnedDate: null, returnedBy: null, voided: false } }, ...corrections];
+      return nCorr(after);
+    },
+    async listLoanCorrections(id) {
+      fail();
+      return corrections.filter((c) => c.loanId === id);
     },
     async updateLoan(id, input) {
       fail();

@@ -24,8 +24,11 @@ export const toBackupLoan = (l: Loan): BackupLoan => ({
  */
 export function booksToJson(books: Book[], now = new Date(), loans?: Loan[]): string {
   if (!loans) return JSON.stringify({ format: BACKUP_FORMAT, version: 1, exportedAt: now.toISOString(), count: books.length, books }, null, 2);
+  // I prestiti annullati (registrati per errore) non fanno parte del backup: ne è dichiarato il numero. La traccia delle correzioni resta nel database.
+  const all = loans;
+  loans = loans.filter((l) => l.state !== "annullato");
   const copies = [...new Map(loans.map((l) => [`${l.bookId}#${l.copyNo}`, { bookId: l.bookId, copyNo: l.copyNo }])).values()];
-  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length, loanCount: loans.length, books, copies, loans: loans.map(toBackupLoan) }, null, 2);
+  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: now.toISOString(), count: books.length, loanCount: loans.length, ...(all.length !== loans.length ? { voidedLoansNotIncluded: all.length - loans.length } : {}), books, copies, loans: loans.map(toBackupLoan) }, null, 2);
 }
 
 /** Neutralizza le "formule" (=, +, -, @, tab, CR) quando il CSV viene aperto in un foglio di calcolo. */
