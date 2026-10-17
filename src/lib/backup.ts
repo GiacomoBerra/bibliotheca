@@ -140,6 +140,17 @@ function parseBackupLoans(raw: unknown, version: number): { loans: BackupLoan[];
 }
 
 export type Resolution = "crea" | "aggiorna" | "salta";
+/** Schede già presenti che sembrano la stessa di `input` (stesso ISBN, oppure stesso titolo e primo autore). Serve all'inserimento manuale. */
+export function findProbableDuplicates(input: BookInput, candidates: Book[]): { book: Book; why: "ISBN" | "titolo e primo autore" }[] {
+  const isbn = bare(input.isbn);
+  const out: { book: Book; why: "ISBN" | "titolo e primo autore" }[] = [];
+  for (const b of candidates) {
+    if (isbn && bare(b.isbn) === isbn) out.push({ book: b, why: "ISBN" });
+    else if (input.title.trim() && key(b) === key(input)) out.push({ book: b, why: "titolo e primo autore" });
+  }
+  return out;
+}
+
 export type Relation = "nuova" | "stesso-id" | "stesso-isbn" | "stesso-titolo-autore" | "duplicato-nel-file";
 export interface PlanItem {
   item: BackupItem;

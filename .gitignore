@@ -6,3 +6,4 @@ dist
 .env.*
 !.env.example
 .netlify
+fonti-report.txt

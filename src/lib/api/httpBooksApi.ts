@@ -60,7 +60,7 @@ export function createHttpBooksApi(opts: HttpApiOptions = {}): BooksApi {
     listBooks: async (o = {}) => (await call("GET", `/api/books${qs(o)}`)) as BookPage,
     getBook: async (id) => (await call("GET", `/api/books/${encodeURIComponent(id)}`, undefined, true)) as Book | null,
     createBook: async (input: BookInput) => (await call("POST", "/api/books", input)) as Book,
-    updateBook: async (id, input) => (await call("PUT", `/api/books/${encodeURIComponent(id)}`, input)) as Book,
+    updateBook: async (id, input, expectedUpdatedAt) => (await call("PUT", `/api/books/${encodeURIComponent(id)}`, expectedUpdatedAt ? { ...input, expectedUpdatedAt } : input)) as Book,
     deleteBook: async (id) => { await call("DELETE", `/api/books/${encodeURIComponent(id)}`); },
     getStats: async () => (await call("GET", "/api/stats")) as CatalogStats,
     listAllBooks: async () => ((await call("GET", "/api/export")) as { books: Book[] }).books,

@@ -1,4 +1,48 @@
-# Stato del progetto — aggiornato il 16 ott 2026
+# Stato del progetto — aggiornato il 17 ott 2026
+
+> **Versione di rilascio: PR #8 (`feature/copie-affidabilita` → `main`)**. Contiene tutti i branch precedenti (#1–#7 sono suoi antenati, verificato con `git merge-base`). Le tabelle storiche più sotto (matrice del 16 ott) restano per cronologia: **vale questa sezione**.
+
+# RILASCIO — stato al 17 ott 2026
+
+## Matrice finale
+Legenda: **Auto** = test automatici (Claude, sandbox, Postgres reale in locale) · **Man.** = verifica manuale del proprietario su Deploy Preview (non eseguita da Claude) · **Da fare** = serve un'azione del proprietario.
+
+| Funzione | Auto | Man. | Note |
+|---|---|---|---|
+| Login Identity, ruoli admin/viewer, 401/403/CSRF lato server | sì | sì (PR #3, #6/#7) | |
+| Catalogo condiviso, ricerca, filtri, colonna e filtro «Stato prestito» | sì | sì | |
+| Inserimento/modifica/cancellazione schede | sì | sì | |
+| **Duplicati all'inserimento manuale** (ISBN o titolo+primo autore: avviso con link e conferma) | sì | Da fare | nuovo, 17 ott |
+| **Modifiche simultanee**: la seconda viene rifiutata (409) senza sovrascrivere | sì | Da fare | nuovo, 17 ott |
+| MARC21 (campi, indicatori, sottocampi, ripetizioni, ordine), soggetti, Dewey, collocazione | sì | sì (PR #3) | validazione = indicazione didattica, non catalografica; non è ISO 2709 |
+| Copie fisiche (aggiunta, codice univoco, note, prestito per copia, disponibilità parziale) | sì | Da fare (PR #8) | |
+| Prestiti, restituzioni, ritardi, annullamenti, correzioni tracciate | sì | sì | |
+| Backup v4 / ripristino integrale (schede, copie, prestiti, annullamenti, cronologia) | sì (PGlite + driver `pg`) | sì (storico); copie: Da fare | |
+| Importazione ISBN/CSV/JSON con anteprima e duplicati | sì | parziale | |
+| Modalità didattica | sì | sì (PR #3) | contenuti da far rivedere a un catalogatore |
+| Dettatura vocale (Web Speech) con inserimento manuale sempre disponibile | sì (logica) | **Da fare** | corretto un blocco: l'intestazione `Permissions-Policy` disattivava il microfono (`microphone=()` → `microphone=(self)`) |
+| Fonti reali Open Library / Google Books / LoC | solo risposte simulate | **Da fare** | dal sandbox non raggiungibili; script pronto: `npm run verifica:fonti` |
+| Accessibilità (axe senza contrasto, tastiera), responsive | sì (axe) | parziale | contrasto e screen reader non misurati |
+
+## Cosa blocca il rilascio e cosa no
+**Bloccanti** (solo verifiche, nessun difetto noto aperto): (1) provare le fonti reali; (2) provare la dettatura su Chrome/Edge e su smartphone; (3) provare sulla Deploy Preview della PR #8 duplicati, conflitto e copie; (4) creare gli utenti e i ruoli di produzione.
+**Importanti non bloccanti**: CSP; limite di ricerche (rate limit) solo in memoria dell'istanza; misura del contrasto e prova con screen reader; revisione dei contenuti didattici.
+**Rimandabili**: MARC ISO 2709 interoperabile; soggettari/DDC con fonti autorevoli; E2E automatici sul sito pubblicato; monitoraggio.
+
+## Passi di pubblicazione (a cura del proprietario, in ordine)
+1. Sulla Deploy Preview della PR #8: provare duplicato, conflitto (due schede del browser aperte sulla stessa scheda), copie, dettatura (Chrome/Edge, anche smartphone).
+2. Sul tuo computer: `npm install && npm run verifica:fonti` → invia/controlla `fonti-report.txt`.
+3. Netlify → Identity: abilitata, **Invite only**, utenti invitati con ruolo `admin`/`viewer` (vedi `docs/netlify-attivazione.md`).
+4. Prima del merge: scarica un backup JSON dal sito attuale (Impostazioni) se contiene dati reali.
+5. Merge della PR #8 in `main` → Netlify pubblica e applica le migrazioni 0001–0006 al database di produzione (additive).
+6. Dopo la pubblicazione: login admin, crea una scheda `[TEST]`, scarica il backup, controlla il viewer, cancella la scheda di prova.
+Nota: le anteprime copiano i dati di produzione e i link sono pubblici.
+
+## Ambito congelato
+Nessuna nuova funzione. Tutto ciò che non è nella lista sopra va in «Versioni future».
+
+## Verifica del 17 ott (Claude)
+Migrazioni: 0001–0006, tutte additive; l'unica con `insert` è la 0006 (crea la copia n. 1 per le schede esistenti), nessun dato dimostrativo. Variabili d'ambiente lette dal codice: `NETLIFY_DB_URL` (automatica), `LOOKUP_CONTACT` e `GOOGLE_BOOKS_API_KEY` (entrambe facoltative). Nessun segreto nel repository.
 
 Stati: proposta / implementata / testata / pubblicata. «Preview» = verificato dal proprietario su Deploy Preview PR #3.
 

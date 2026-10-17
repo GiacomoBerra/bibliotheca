@@ -29,7 +29,7 @@ function Modifica() {
           submitLabel="Salva le modifiche"
           onCancel={() => void navigate({ to: "/catalogo/$id", params: { id } })}
           onSubmit={async (input) => {
-            await api.updateBook(id, input);
+            await api.updateBook(id, input, book.updatedAt);
             await navigate({ to: "/catalogo/$id", params: { id } });
           }}
         />

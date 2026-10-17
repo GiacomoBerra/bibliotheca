@@ -80,7 +80,8 @@ export interface BooksApi {
   listBooks(options?: ListOptions): Promise<BookPage>;
   getBook(id: string): Promise<Book | null>;
   createBook(input: BookInput): Promise<Book>;
-  updateBook(id: string, input: BookInput): Promise<Book>;
+  /** `expectedUpdatedAt`: versione aperta dall'utente; se la scheda è cambiata nel frattempo il salvataggio è rifiutato (conflitto). */
+  updateBook(id: string, input: BookInput, expectedUpdatedAt?: string): Promise<Book>;
   deleteBook(id: string): Promise<void>;
   getStats(): Promise<CatalogStats>;
   /** Tutte le schede dell'utente (per l'esportazione/backup), lette a pagine. */

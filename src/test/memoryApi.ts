@@ -184,8 +184,9 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       books = [b, ...books];
       return b;
     },
-    async updateBook(id, input) {
+    async updateBook(id, input, expectedUpdatedAt) {
       fail();
+      if (expectedUpdatedAt && books.find((x) => x.id === id) && books.find((x) => x.id === id)!.updatedAt !== expectedUpdatedAt) throw new BooksApiError("conflict", "Questa scheda è stata modificata da un altro amministratore dopo che l'hai aperta. Nulla è stato sovrascritto.");
       const i = books.findIndex((b) => b.id === id);
       const cur = books[i];
       if (!cur) throw new BooksApiError("notfound", "La scheda non esiste più o non è tua: nessuna modifica è stata salvata.");

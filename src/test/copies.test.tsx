@@ -52,3 +52,25 @@ describe("Copie fisiche — scheda del libro", () => {
     expect(screen.queryByRole("button", { name: /Modifica codice e note/ })).not.toBeInTheDocument();
   });
 });
+
+describe("Nuovo libro — avviso duplicati", () => {
+  it("stesso ISBN di una scheda esistente: avviso con link, nessun salvataggio finché non si conferma", async () => {
+    const user = userEvent.setup();
+    const api = makeMemoryApi([makeBook({ id: "1", title: "Il nome della rosa", isbn: "978-0-306-40615-7" })], { role: "admin" });
+    const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/catalogo/nuovo"] }) });
+    render(
+      <AuthProvider identity={makeFakeIdentity({ session: true, roles: ["admin"] }).identity}>
+        <BooksApiProvider api={api}><RouterProvider router={router} /></BooksApiProvider>
+      </AuthProvider>,
+    );
+    await user.type(await screen.findByLabelText("Titolo *"), "Il nome della rosa (copia mia)");
+    await user.type(screen.getByLabelText("ISBN"), "9780306406157");
+    await user.click(screen.getByRole("button", { name: "Salva la scheda" }));
+    const box = await screen.findByRole("alert", { name: "Possibile duplicato" });
+    expect(within(box).getByRole("link", { name: "Il nome della rosa" })).toBeInTheDocument();
+    expect((await api.listBooks({})).items).toHaveLength(1); // nulla salvato
+    await user.click(within(box).getByRole("button", { name: "Salva comunque come nuova scheda" }));
+    await screen.findByRole("heading", { name: /copia mia/ });
+    expect((await api.listBooks({})).items).toHaveLength(2);
+  });
+});

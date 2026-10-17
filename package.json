@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verifica:fonti": "VERIFICA_FONTI=1 vitest run server/sources/fontiReali.test.ts"
   },
   "engines": {
     "node": ">=22"

@@ -91,11 +91,24 @@ export async function createBook(db: Db, userId: string, input: BookInput): Prom
   return rowToBook(r.rows[0]!);
 }
 
-export async function updateBook(db: Db, userId: string, id: string, input: BookInput): Promise<Book | null> {
+export class BookConflictError extends Error {}
+
+/**
+ * Aggiorna la scheda. Se `expectedUpdatedAt` è indicato (la versione che l'utente ha aperto) e la scheda è stata
+ * modificata nel frattempo da qualcun altro, NON sovrascrive e lancia BookConflictError. Confronto al millisecondo
+ * (il browser conosce solo i millisecondi, il database i microsecondi).
+ */
+export async function updateBook(db: Db, userId: string, id: string, input: BookInput, expectedUpdatedAt?: string | null): Promise<Book | null> {
   if (!isUuid(id)) return null;
   const sets = WRITE_COLS.map((c, i) => `${c} = $${i + 3}${c === "marc_fields" ? "::jsonb" : ""}`).join(", ");
-  const r = await db.query<BookRow>(`update books set updated_by = $1, ${sets} where id = $2 returning ${BOOK_COLUMNS}`, [userId, id, ...writeParams(input)]);
-  return r.rows[0] ? rowToBook(r.rows[0]) : null;
+  const exp = WRITE_COLS.length + 3;
+  const r = await db.query<BookRow>(
+    `update books set updated_by = $1, ${sets} where id = $2 and ($${exp}::timestamptz is null or date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $${exp}::timestamptz)) returning ${BOOK_COLUMNS}`,
+    [userId, id, ...writeParams(input), expectedUpdatedAt ?? null],
+  );
+  if (r.rows[0]) return rowToBook(r.rows[0]);
+  if (expectedUpdatedAt && (await db.query(`select 1 from books where id = $1`, [id])).rows.length > 0) throw new BookConflictError();
+  return null;
 }
 
 export async function deleteBook(db: Db, id: string): Promise<boolean> {

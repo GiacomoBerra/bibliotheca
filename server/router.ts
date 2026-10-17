@@ -249,7 +249,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (!body.ok) return body.res;
         const parsed = parseBookInput(body.value);
         if (!parsed.ok) return fail(400, "validation", "Alcuni campi non sono validi.", parsed.errors);
-        const b = await repo.updateBook(db, userId, id, parsed.input);
+        const exp = (body.value as { expectedUpdatedAt?: unknown } | null)?.expectedUpdatedAt;
+        if (exp !== undefined && exp !== null && (typeof exp !== "string" || Number.isNaN(Date.parse(exp)))) return fail(400, "validation", "Versione della scheda non valida.");
+        let b;
+        try { b = await repo.updateBook(db, userId, id, parsed.input, (exp as string | undefined) ?? null); }
+        catch (e) { if (e instanceof repo.BookConflictError) return fail(409, "edit_conflict", "Questa scheda è stata modificata da un altro amministratore dopo che l'hai aperta. Nulla è stato sovrascritto: ricarica la scheda per vedere le modifiche e rifai la tua."); throw e; }
         return b ? json(200, b) : fail(404, "not_found", "La scheda non esiste più: nessuna modifica è stata salvata.");
       }
       if (req.method === "DELETE") {
