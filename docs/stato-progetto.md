@@ -25,6 +25,11 @@ Legenda: **Auto** = test automatici (Claude, sandbox, Postgres reale in locale) 
 | Fonte reale **Google Books** | solo risposte simulate | **non verificata**: la fonte ha risposto «limite di richieste» (probabile 429 senza chiave) | non bloccante: le altre due fonti funzionano e il messaggio all'utente è corretto. Da riprovare più tardi; se persiste serve `GOOGLE_BOOKS_API_KEY` (gratuita) |
 | Accessibilità (axe senza contrasto, tastiera), responsive | sì (axe) | parziale | contrasto e screen reader non misurati |
 
+## Stato tecnico della PR #8 (17 ott, ore 08:40)
+Commit `d0b4b35`. Deploy Preview costruita con successo (le migrazioni 0001–0006 sono state applicate al database della preview). La PR è unibile senza conflitti con `main` (`mergeable: clean`). Test: tsc pulito, 368 verdi. **Prove manuali su duplicati, conflitto, copie, backup con copie e dettatura: non ancora eseguite dal proprietario → stato «testata in automatico», non «verificata».**
+
+**Limitazioni note**: Google Books non verificata (limite di richieste; se non disponibile l'app lo segnala e usa le altre fonti); CSP assente; rate limit delle ricerche solo in memoria dell'istanza; contrasto e screen reader non misurati; contenuti didattici da far rivedere; MARC21 non è ISO 2709.
+
 ## Cosa blocca il rilascio e cosa no
 **Bloccanti** (solo verifiche, nessun difetto noto aperto): (1) provare le fonti reali; (2) provare la dettatura su Chrome/Edge e su smartphone; (3) provare sulla Deploy Preview della PR #8 duplicati, conflitto e copie; (4) creare gli utenti e i ruoli di produzione.
 **Importanti non bloccanti**: CSP; limite di ricerche (rate limit) solo in memoria dell'istanza; misura del contrasto e prova con screen reader; revisione dei contenuti didattici.
