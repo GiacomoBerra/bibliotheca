@@ -1,0 +1,35 @@
+# Bibliotheca — configurazione Netlify: sito statico SPA + API come Netlify Functions (netlify/functions/api.mts,
+# servita su /api/*). Le Functions hanno la precedenza sui redirect e sui file statici (ordine di elaborazione Netlify);
+# da confermare su una Deploy Preview.
+# Nessuna variabile d'ambiente va scritta qui: le Functions non le leggono da netlify.toml.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Le risposte delle Functions impostano le proprie intestazioni nel codice (cache-control: no-store);
+# le regole [[headers]] qui sotto valgono solo per i file statici.
+
+# Ogni percorso dell'app viene servito da index.html (routing lato client).
+# I file reali (asset, favicon, robots.txt) hanno la precedenza.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Robots-Tag = "noindex, nofollow"
+    Permissions-Policy = "camera=(), microphone=(self), geolocation=()"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

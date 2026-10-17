@@ -1,0 +1,362 @@
+// @vitest-environment node
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PGlite } from "@electric-sql/pglite";
+import { createHttpBooksApi } from "../src/lib/api/httpBooksApi";
+import { emptyBookInput } from "../src/lib/api/types";
+import { handle } from "./router";
+import { createLookup } from "./sources/lookup";
+import { api, makeDeps, makeTestDb } from "./testHarness";
+import type { Db } from "./db";
+
+let db: Db; let raw: PGlite; let call: ReturnType<typeof api>;
+beforeAll(async () => { ({ db, raw } = await makeTestDb()); call = api(makeDeps(db)); });
+afterAll(async () => { await raw.close(); });
+
+const A = "user-A", B = "user-B";
+const create = (user: string, body: object) => call("POST", "/api/books", { user, body });
+
+describe("Accesso negato senza autenticazione", () => {
+  it.each([
+    ["GET", "/api/books"], ["POST", "/api/books"], ["GET", "/api/books/11111111-1111-1111-1111-111111111111"],
+    ["PUT", "/api/books/11111111-1111-1111-1111-111111111111"], ["DELETE", "/api/books/11111111-1111-1111-1111-111111111111"],
+    ["GET", "/api/stats"], ["GET", "/api/export"],
+  ])("%s %s → 401", async (m, p) => {
+    const r = await call(m, p, { body: { title: "x" } });
+    expect(r.status).toBe(401);
+    expect(r.json.error.code).toBe("unauthenticated");
+  });
+  it("nessun dato nella risposta 401 e nessuna scrittura nel database", async () => {
+    await call("POST", "/api/books", { body: { title: "Intruso" } });
+    expect((await raw.query("select count(*)::int as n from books where title = 'Intruso'")).rows[0]).toEqual({ n: 0 });
+  });
+  it("l'identità non si può dichiarare dal browser: parametri, corpo e intestazioni usuali sono ignorati", async () => {
+    await create(A, { title: "Segreto di A" });
+    for (const extra of [
+      { path: `/api/books?userId=${A}&owner_id=${A}` },
+      { path: "/api/books", headers: { "x-user-id": A, authorization: `Bearer ${A}`, cookie: `owner_id=${A}` } },
+    ]) {
+      const r = await call("GET", extra.path, { headers: extra.headers ?? {} });
+      expect(r.status).toBe(401);
+    }
+    const r = await create(B, { title: "Di B", owner_id: A, ownerId: A, user_id: A, created_by: A });
+    expect(r.status).toBe(201);
+    expect((await raw.query("select created_by from books where title = 'Di B'")).rows[0]).toEqual({ created_by: B });
+  });
+});
+
+describe("Ruoli: catalogo unico condiviso, permessi verificati lato server", () => {
+  const ADMIN2 = "admin-2", V = "viewer-1";
+  let id = "";
+  const MARC = [{ tag: "245", ind1: "1", ind2: "0", subfields: [{ code: "a", value: "Condivisa" }] }];
+  beforeAll(async () => { id = (await create(A, { title: "Condivisa", authors: ["Rossi, Anna"], marcFields: MARC })).json.id; });
+  const as = (user: string, roles: string[]) => (m: string, p: string, body?: object) => call(m, p, { user, roles, ...(body ? { body } : {}) });
+  const viewer = as(V, ["viewer"]);
+
+  it("due admin diversi vedono e modificano la stessa biblioteca", async () => {
+    expect((await call("GET", `/api/books/${id}`, { user: ADMIN2 })).json.title).toBe("Condivisa");
+    expect((await call("GET", "/api/books?query=condivisa", { user: ADMIN2 })).json.total).toBe(1);
+    const up = await call("PUT", `/api/books/${id}`, { user: ADMIN2, body: { title: "Condivisa", notes: "rivista", marcFields: MARC } });
+    expect(up.status).toBe(200);
+    expect((await raw.query("select created_by, updated_by from books where id = $1", [id])).rows[0]).toEqual({ created_by: A, updated_by: ADMIN2 });
+  });
+  it("il viewer vede gli stessi libri dell'admin: elenco, ricerca, scheda completa con i campi MARC21, statistiche", async () => {
+    expect((await viewer("GET", "/api/books?query=condivisa")).json.total).toBe(1);
+    const g = await viewer("GET", `/api/books/${id}`);
+    expect(g.status).toBe(200);
+    expect(g.json.marcFields[0]).toMatchObject({ tag: "245", ind1: "1", ind2: "0" });
+    expect((await viewer("GET", "/api/stats")).json.total).toBeGreaterThan(0);
+  });
+  it("il viewer NON può inserire, modificare, cancellare né esportare (403) e nulla cambia nel database", async () => {
+    const before = (await raw.query("select count(*)::int as n, max(updated_at) as m from books")).rows[0];
+    expect((await viewer("POST", "/api/books", { title: "Abusivo" })).status).toBe(403);
+    expect((await viewer("PUT", `/api/books/${id}`, { title: "Hack" })).status).toBe(403);
+    expect((await viewer("DELETE", `/api/books/${id}`)).status).toBe(403);
+    expect((await viewer("GET", "/api/export")).status).toBe(403);
+    expect((await viewer("GET", "/api/export")).json.books).toBeUndefined();
+    expect((await viewer("PATCH", "/api/books")).status).toBe(403);
+    expect((await raw.query("select count(*)::int as n, max(updated_at) as m from books")).rows[0]).toEqual(before);
+    expect((await raw.query("select title from books where id = $1", [id])).rows[0]).toEqual({ title: "Condivisa" });
+  });
+  it("un account senza ruolo, o con un ruolo sconosciuto, non ha alcun accesso (deny by default)", async () => {
+    for (const roles of [[], ["editor"], ["Admin"], ["administrator"], [""]]) {
+      for (const [m, p] of [["GET", "/api/books"], ["GET", `/api/books/${id}`], ["GET", "/api/stats"], ["GET", "/api/export"], ["POST", "/api/books"]] as const) {
+        const r = await call(m, p, { user: "x", roles, body: { title: "x" } });
+        expect(r.status, `${m} ${p} ${roles}`).toBe(403);
+        expect(r.json.error.code).toBe("no_role");
+      }
+    }
+  });
+  it("il ruolo non si può dichiarare dal browser: intestazioni, parametri e corpo sono ignorati", async () => {
+    // sessione valida di un viewer (x-test-roles viene dal «JWT verificato»); il resto è solo rumore dal browser
+    const attempts = [
+      { path: "/api/books", headers: { "x-role": "admin", "x-roles": "admin", role: "admin", authorization: "Bearer admin", cookie: "role=admin; roles=admin" } },
+    ];
+    for (const a of attempts) {
+      const r = await call("POST", a.path, { user: V, roles: ["viewer"], headers: a.headers, body: { title: "x", role: "admin", roles: ["admin"], app_metadata: { roles: ["admin"] } } });
+      expect(r.status).toBe(403);
+    }
+    expect((await call("DELETE", `/api/books/${id}?role=admin&roles=admin`, { user: V, roles: ["viewer"] })).status).toBe(403);
+  });
+  it("un utente con entrambi i ruoli ha i permessi di admin; senza sessione resta 401, non 403", async () => {
+    expect((await call("POST", "/api/books", { user: "both", roles: ["viewer", "admin"], body: { title: "Doppio ruolo" } })).status).toBe(201);
+    expect((await call("GET", "/api/books")).status).toBe(401);
+  });
+  it("il corpo non può impostare chi ha creato la scheda", async () => {
+    const r = await create(A, { title: "Autore vero", created_by: "altro", updated_by: "altro", owner_id: "altro" });
+    expect((await raw.query("select created_by, updated_by from books where id = $1", [r.json.id])).rows[0]).toEqual({ created_by: A, updated_by: A });
+  });
+  it("dopo la cancellazione da parte di un admin il viewer non vede più la scheda", async () => {
+    const tmp = (await create(A, { title: "Temporanea" })).json.id;
+    expect((await viewer("GET", `/api/books/${tmp}`)).status).toBe(200);
+    expect((await call("DELETE", `/api/books/${tmp}`, { user: ADMIN2 })).status).toBe(200);
+    expect((await viewer("GET", `/api/books/${tmp}`)).status).toBe(404);
+  });
+});
+
+describe("Inserimento, modifica, cancellazione", () => {
+  it("record incompleto: basta il titolo; default bozza", async () => {
+    const r = await create(A, { title: "Solo titolo" });
+    expect(r.status).toBe(201);
+    expect(r.json).toMatchObject({ title: "Solo titolo", status: "bozza", authors: [], isbn: "", marcFields: null });
+  });
+  it("validazione lato server: titolo mancante, ISBN malformato, tipi errati, stato errato, JSON non valido", async () => {
+    expect((await create(A, {})).status).toBe(400);
+    expect((await create(A, { title: "  " })).status).toBe(400);
+    expect((await create(A, { title: "x", isbn: "12ab" })).json.error.fields.isbn).toBeDefined();
+    expect((await create(A, { title: 5 })).status).toBe(400);
+    expect((await create(A, { title: "x", authors: "no" })).status).toBe(400);
+    expect((await create(A, { title: "x", status: "altro" })).status).toBe(400);
+    expect((await create(A, { title: "x".repeat(501) })).status).toBe(400);
+    expect((await call("POST", "/api/books", { user: A, raw: "{non json" })).json.error.code).toBe("bad_json");
+    expect((await call("POST", "/api/books", { user: A, raw: "x".repeat(1_000_001) })).status).toBe(413);
+  });
+  it("MARC21: ordine, campi ripetuti, indicatori e sottocampi si conservano; MARC malformato rifiutato", async () => {
+    const marcFields = [
+      { tag: "650", ind1: " ", ind2: "7", subfields: [{ code: "a", value: "Uno" }, { code: "2", value: "x" }] },
+      { tag: "650", ind1: " ", ind2: "7", subfields: [{ code: "a", value: "Due" }] },
+      { tag: "245", ind1: "1", ind2: "0", subfields: [{ code: "a", value: "T" }, { code: "a", value: "ripetuto" }] },
+    ];
+    const r = await create(A, { title: "Con MARC", marcFields, marcLeader: "00000nam a2200000 a 4500" });
+    expect(r.json.marcFields).toEqual(marcFields);
+    expect((await call("GET", `/api/books/${r.json.id}`, { user: A })).json.marcFields).toEqual(marcFields);
+    expect((await create(A, { title: "x", marcFields: { a: 1 } })).status).toBe(400);
+    expect((await create(A, { title: "x", marcFields: [{ tag: "245" }] })).status).toBe(400);
+  });
+  it("MARC21: la validità strutturale è imposta dal server (indicatori, codici, tipo di campo, leader)", async () => {
+    const bad = [
+      [{ tag: "245", ind1: "10", ind2: "0", subfields: [{ code: "a", value: "x" }] }],
+      [{ tag: "245", ind1: "1", ind2: "0", subfields: [{ code: "AB", value: "x" }] }],
+      [{ tag: "245", ind1: "1", ind2: "0", subfields: [] }],
+      [{ tag: "001", ind1: " ", ind2: " ", subfields: [{ code: "a", value: "x" }] }],
+      [{ tag: "245", value: "senza indicatori" }],
+    ];
+    for (const marcFields of bad) {
+      const r = await create(A, { title: "x", marcFields });
+      expect(r.status).toBe(400);
+      expect(r.json.error.fields?._ ?? r.json.error.message).toBeDefined();
+    }
+    expect((await create(A, { title: "x", marcLeader: "troppo corto" })).status).toBe(400);
+    expect((await create(A, { title: "Struttura MARC valida", marcLeader: "00000nam a2200000 a 4500", marcFields: [{ tag: "001", value: "id1" }] })).status).toBe(201);
+  });
+  it("Dewey: notazione, fonte e note si salvano e si rileggono; fonte non valida rifiutata", async () => {
+    const r = await create(A, { title: "Dewey salvata", dewey: "853.914", deweySource: "fonte-esterna", deweyNotes: "DDC 23? da controllare" });
+    expect(r.status).toBe(201);
+    expect((await call("GET", `/api/books/${r.json.id}`, { user: A })).json).toMatchObject({ dewey: "853.914", deweySource: "fonte-esterna", deweyNotes: "DDC 23? da controllare" });
+    expect((await create(A, { title: "x", deweySource: "inventata" })).status).toBe(400);
+    expect((await create(A, { title: "x", deweyNotes: "a".repeat(2001) })).status).toBe(400);
+  });
+  it("modifica e cancellazione, con 404 sulla seconda cancellazione", async () => {
+    const id = (await create(A, { title: "Da modificare", subjects: ["Uno"] })).json.id;
+    const up = await call("PUT", `/api/books/${id}`, { user: A, body: { title: "Modificato", status: "catalogato", subjects: ["Due", "Tre"] } });
+    expect(up.json).toMatchObject({ title: "Modificato", status: "catalogato", subjects: ["Due", "Tre"] });
+    expect((await call("DELETE", `/api/books/${id}`, { user: A })).json).toEqual({ deleted: true });
+    expect((await call("DELETE", `/api/books/${id}`, { user: A })).status).toBe(404);
+    expect((await call("GET", `/api/books/${id}`, { user: A })).status).toBe(404);
+  });
+  it("identificativi non UUID → 404, mai errori SQL", async () => {
+    for (const id of ["abc", "1%20or%201=1", "'; drop table books;--"]) {
+      expect((await call("GET", `/api/books/${id}`, { user: A })).status).toBe(404);
+      expect((await call("DELETE", `/api/books/${id}`, { user: A })).status).toBe(404);
+    }
+    expect((await raw.query("select count(*)::int as n from books")).rows[0]).not.toEqual({ n: 0 });
+  });
+});
+
+describe("Ricerca, filtri, ordinamento, paginazione, statistiche", () => {
+  const U = "user-search";
+  // catalogo condiviso: questi test contano i libri, quindi usano un database tutto loro
+  let call: ReturnType<typeof api>; let rawL: PGlite;
+  const create = (user: string, body: object) => call("POST", "/api/books", { user, body });
+  afterAll(async () => { await rawL.close(); });
+  beforeAll(async () => {
+    const t = await makeTestDb(); rawL = t.raw; call = api(makeDeps(t.db));
+    for (const b of [
+      { title: "Introduzione alla chimica", authors: ["Rossi, Anna"], isbn: "978-0-306-40615-7", publisher: "Alfa", publicationYear: "2001", status: "catalogato", subjects: ["Chimica"] },
+      { title: "Astronomia per tutti", authors: ["Bianchi, Luca"], publicationYear: "1999", status: "bozza" },
+      { title: "Storia del libro 100%", authors: ["Verdi, Gino"], publisher: "Alfa", status: "da revisionare", subjects: ["Libri", "chimica"], dewey: "002.09" },
+    ]) await create(U, b);
+  });
+  const list = (q: string) => call("GET", `/api/books?${q}`, { user: U });
+  it("titolo, autore, ISBN (con e senza trattini), Dewey; ignora maiuscole e spazi", async () => {
+    expect((await list("query=%20%20ASTRONOMIA%20")).json.total).toBe(1);
+    expect((await list("query=bianchi")).json.total).toBe(1);
+    expect((await list("query=9780306406157")).json.total).toBe(1);
+    expect((await list("query=978-0-306-40615-7")).json.total).toBe(1);
+    expect((await list("query=002.09")).json.total).toBe(1);
+    expect((await list("query=alfa%20chimica")).json.total).toBe(2);
+    expect((await list("query=alfa%20chimica%20rossi")).json.total).toBe(1);
+  });
+  it("% e _ sono letterali; tentativi di SQL injection non hanno effetto", async () => {
+    expect((await list("query=100%25")).json.total).toBe(1);
+    expect((await list("query=%25")).json.total).toBe(1); // solo la scheda con un "%" vero nel titolo, non "tutto"
+    expect((await list("query=_")).json.total).toBe(0);
+    for (const q of ["'%20or%201=1--", "';drop%20table%20books;--", "%5C"]) expect((await list(`query=${q}`)).status).toBe(200);
+    expect((await list("query=")).json.total).toBe(3);
+  });
+  it("filtro per stato, ordinamento (whitelist) e paginazione", async () => {
+    expect((await list("status=bozza")).json.total).toBe(1);
+    expect((await list("sort=titolo&dir=asc")).json.items.map((b: any) => b.title)).toEqual(["Astronomia per tutti", "Introduzione alla chimica", "Storia del libro 100%"]);
+    expect((await list("sort=titolo&dir=desc")).json.items[0].title).toBe("Storia del libro 100%");
+    expect((await list("sort=anno&dir=asc")).json.items[2].publicationYear).toBe("");
+    expect((await list("sort=1;drop table books&dir=sideways&status=boh")).status).toBe(200);
+    const p2 = (await list("sort=titolo&pageSize=2&page=2")).json;
+    expect(p2).toMatchObject({ total: 3, page: 2, pageSize: 2 });
+    expect(p2.items).toHaveLength(1);
+    expect((await list("pageSize=100000&page=-5")).json).toMatchObject({ pageSize: 100, page: 1 });
+  });
+  it("statistiche reali", async () => {
+    expect((await call("GET", "/api/stats", { user: U })).json).toEqual({ total: 3, byStatus: { bozza: 1, "da revisionare": 1, catalogato: 1 }, publishers: 1, subjects: 2 });
+  });
+});
+
+describe("Protezione CSRF, metodi, risposte", () => {
+  it("le scritture senza intestazione di sicurezza, con Origin diversa o non JSON sono rifiutate (403)", async () => {
+    expect((await call("POST", "/api/books", { user: A, body: { title: "x" }, headers: { "x-bibliotheca": "0" } })).status).toBe(403);
+    expect((await call("POST", "/api/books", { user: A, body: { title: "x" }, headers: { origin: "https://evil.example" } })).status).toBe(403);
+    expect((await call("POST", "/api/books", { user: A, body: { title: "x" }, headers: { "sec-fetch-site": "cross-site" } })).status).toBe(403);
+    expect((await call("POST", "/api/books", { user: A, raw: "title=x", headers: { "content-type": "application/x-www-form-urlencoded" } })).status).toBe(403);
+    expect((await raw.query("select count(*)::int as n from books where created_by = $1 and title = 'x'", [A])).rows[0]).toEqual({ n: 0 });
+  });
+  it("percorsi e metodi sconosciuti; risposte non cacheabili", async () => {
+    expect((await call("GET", "/api/altro", { user: A })).status).toBe(404);
+    expect((await call("PATCH", "/api/books", { user: A, body: {} })).status).toBe(405);
+    const r = await call("GET", "/api/books", { user: A });
+    expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+  it("database non configurato: 401 senza sessione, 503 con sessione (mai dati)", async () => {
+    const noDb = api(makeDeps(null));
+    expect((await noDb("GET", "/api/books")).status).toBe(401);
+    const r = await noDb("GET", "/api/books", { user: A });
+    expect(r.status).toBe(503);
+    expect(r.json.error.code).toBe("db_not_configured");
+  });
+  it("errori del database classificati senza esporne i dettagli", async () => {
+    const cases: [string, string][] = [["42P01", "db_schema_missing"], ["ECONNREFUSED", "db_unreachable"], ["28P01", "db_unreachable"]];
+    for (const [code, expected] of cases) {
+      const broken = { async query() { throw Object.assign(new Error("postgres://u:segreta@host/db"), { code }); } };
+      const r = await api(makeDeps(broken as unknown as Db))("GET", "/api/books", { user: A });
+      expect(r.status).toBe(503);
+      expect(r.json.error.code).toBe(expected);
+      expect(JSON.stringify(r.json)).not.toMatch(/segreta|postgres:/);
+    }
+  });
+  it("errori interni: risposta generica senza dettagli, loggata senza dati dell'utente", async () => {
+    const logs: string[] = [];
+    const broken = { async query() { throw new Error('relation "books" does not exist; password=segreta'); } };
+    const r = await api(makeDeps(broken as unknown as Db, { log: (m) => logs.push(m) }))("GET", "/api/books", { user: A });
+    expect(r.status).toBe(500);
+    expect(JSON.stringify(r.json)).not.toMatch(/relation|segreta/);
+    expect(logs).toHaveLength(1);
+  });
+});
+
+describe("Persistenza dopo un nuovo accesso, con il client reale dell'app", () => {
+  let db: Db; let rawP: PGlite;
+  beforeAll(async () => { ({ db, raw: rawP } = await makeTestDb()); });
+  afterAll(async () => { await rawP.close(); });
+  const session = { current: "user-persist" as string | null };
+  const client = (refresh?: () => Promise<boolean>, expired?: () => void) =>
+    createHttpBooksApi({
+      fetch: async (url, init) => {
+        const headers = new Headers(init?.headers);
+        if (session.current) { headers.set("x-test-session", session.current); headers.set("x-test-roles", "admin"); }
+        return handle(new Request(`https://bibliotheca.test${url as string}`, { ...init, headers: { ...Object.fromEntries(headers), origin: "https://bibliotheca.test" } }), makeDeps(db));
+      },
+      ...(refresh ? { refreshSession: refresh } : {}),
+      ...(expired ? { onSessionExpired: expired } : {}),
+    });
+  it("CRUD completo tramite il client HTTP", async () => {
+    const c = client();
+    const b = await c.createBook({ ...emptyBookInput(), title: "Persistente", authors: ["Neri, Marta"] });
+    expect(b.id).toMatch(/^[0-9a-f-]{36}$/);
+    await c.updateBook(b.id, { ...emptyBookInput(), title: "Persistente 2", status: "catalogato" });
+    expect((await c.getBook(b.id))?.title).toBe("Persistente 2");
+    expect((await c.listBooks({ query: "persistente" })).total).toBe(1);
+    expect((await c.getStats()).byStatus.catalogato).toBe(1);
+    expect((await c.listAllBooks()).map((x) => x.id)).toContain(b.id);
+  });
+  it("dopo uscita e nuovo accesso (nuova sessione, stesso utente) i dati ci sono ancora; un altro utente non li vede", async () => {
+    session.current = null;
+    await expect(client().listBooks()).rejects.toMatchObject({ kind: "auth" });
+    session.current = "user-persist";
+    expect((await client().listBooks({ query: "persistente" })).total).toBe(1);
+    session.current = "altro-admin"; // catalogo condiviso: un altro admin vede gli stessi dati
+    expect((await client().listBooks({ query: "persistente" })).total).toBe(1);
+    expect(await client().getBook("11111111-1111-1111-1111-111111111111")).toBeNull();
+  });
+  it("sessione scaduta: tenta il rinnovo una volta; se riesce riprova, altrimenti segnala la scadenza", async () => {
+    session.current = null;
+    let refreshed = 0, expired = 0;
+    await expect(client(async () => { refreshed++; return false; }, () => expired++).listBooks()).rejects.toMatchObject({ kind: "auth" });
+    expect({ refreshed, expired }).toEqual({ refreshed: 1, expired: 1 });
+    const ok = client(async () => { session.current = "user-persist"; return true; }, () => expired++);
+    expect((await ok.listBooks()).total).toBeGreaterThan(0);
+    expect(expired).toBe(1);
+  });
+  it("errore di rete: messaggio chiaro", async () => {
+    const c = createHttpBooksApi({ fetch: async () => { throw new TypeError("Failed to fetch"); } });
+    await expect(c.createBook({ ...emptyBookInput(), title: "x" })).rejects.toMatchObject({ kind: "network", message: expect.stringContaining("non sono stati modificati") });
+  });
+});
+
+describe("/api/lookup: ricerca su fonti esterne, solo admin, senza scrivere nel catalogo", () => {
+  const fetchCalls: string[] = [];
+  const fake = (async (input: RequestInfo | URL) => {
+    fetchCalls.push(String(input));
+    const u = new URL(String(input));
+    return new Response(JSON.stringify(u.hostname === "openlibrary.org" ? { docs: [] } : { items: [{ id: "G1", volumeInfo: { title: "Libro esterno", authors: ["Anna Rossi"], publishedDate: "1999", industryIdentifiers: [{ type: "ISBN_13", identifier: "9780306406157" }] } }] }), { status: 200 });
+  }) as typeof fetch;
+  const lookupApi = () => api(makeDeps(db, { lookup: createLookup({ fetch: fake, sleep: async () => {}, limits: { perMinute: 3, perDay: 50 } }) }));
+
+  it("senza sessione 401, senza ruolo 403, viewer 403: nessuna chiamata verso le fonti", async () => {
+    const call2 = lookupApi();
+    const before = fetchCalls.length;
+    expect((await call2("GET", "/api/lookup?title=abc")).status).toBe(401);
+    expect((await call2("GET", "/api/lookup?title=abc", { user: "x", roles: [] })).status).toBe(403);
+    expect((await call2("GET", "/api/lookup?title=abc", { user: "v", roles: ["viewer"] })).status).toBe(403);
+    expect(fetchCalls.length).toBe(before);
+  });
+  it("admin: risultati con provenienza; il catalogo non cambia", async () => {
+    const call2 = lookupApi();
+    const n = (await raw.query("select count(*)::int as n from books")).rows[0];
+    const r = await call2("GET", "/api/lookup?isbn=978-0-306-40615-7", { user: "adm", roles: ["admin"] });
+    expect(r.status).toBe(200);
+    expect(r.json.groups[0]).toMatchObject({ match: "esatta" });
+    expect(r.json.groups[0].records[0]).toMatchObject({ source: "googlebooks", title: "Libro esterno" });
+    expect((await raw.query("select count(*)::int as n from books")).rows[0]).toEqual(n);
+    expect((await raw.query("select count(*)::int as n from books where title = 'Libro esterno'")).rows[0]).toEqual({ n: 0 });
+  });
+  it("parametri non validi → 400; metodi diversi da GET → 405/403; limite di frequenza → 429 con Retry-After", async () => {
+    const call2 = lookupApi();
+    expect((await call2("GET", "/api/lookup?isbn=12ab", { user: "adm2", roles: ["admin"] })).status).toBe(400);
+    expect((await call2("GET", "/api/lookup", { user: "adm2", roles: ["admin"] })).status).toBe(400);
+    expect((await call2("POST", "/api/lookup", { user: "adm2", roles: ["admin"], body: {} })).status).toBe(405);
+    for (let i = 0; i < 3; i++) await call2("GET", `/api/lookup?title=Libro%20numero%20${i}`, { user: "adm3", roles: ["admin"] });
+    const limited = await call2("GET", "/api/lookup?title=Libro%20ancora", { user: "adm3", roles: ["admin"] });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+  });
+  it("non configurata → 503 chiaro", async () => {
+    expect((await call("GET", "/api/lookup?title=abc", { user: "adm", roles: ["admin"] })).status).toBe(503);
+  });
+});

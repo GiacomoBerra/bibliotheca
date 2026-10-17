@@ -1,0 +1,293 @@
+# Stato del progetto — aggiornato il 17 ott 2026
+
+> **Versione di rilascio: PR #8 (`feature/copie-affidabilita` → `main`)**. Contiene tutti i branch precedenti (#1–#7 sono suoi antenati, verificato con `git merge-base`). Le tabelle storiche più sotto (matrice del 16 ott) restano per cronologia: **vale questa sezione**.
+
+# RILASCIO — stato al 17 ott 2026
+
+## Matrice finale
+Legenda: **Auto** = test automatici (Claude, sandbox, Postgres reale in locale) · **Man.** = verifica manuale del proprietario su Deploy Preview (non eseguita da Claude) · **Da fare** = serve un'azione del proprietario.
+
+| Funzione | Auto | Man. | Note |
+|---|---|---|---|
+| Login Identity, ruoli admin/viewer, 401/403/CSRF lato server | sì | sì (PR #3, #6/#7) | |
+| Catalogo condiviso, ricerca, filtri, colonna e filtro «Stato prestito» | sì | sì | |
+| Inserimento/modifica/cancellazione schede | sì | sì | |
+| **Duplicati all'inserimento manuale** (ISBN o titolo+primo autore: avviso con link e conferma) | sì | Da fare | nuovo, 17 ott |
+| **Modifiche simultanee**: la seconda viene rifiutata (409) senza sovrascrivere | sì | Da fare | nuovo, 17 ott |
+| MARC21 (campi, indicatori, sottocampi, ripetizioni, ordine), soggetti, Dewey, collocazione | sì | sì (PR #3) | validazione = indicazione didattica, non catalografica; non è ISO 2709 |
+| Copie fisiche (aggiunta, codice univoco, note, prestito per copia, disponibilità parziale) | sì | Da fare (PR #8) | |
+| Prestiti, restituzioni, ritardi, annullamenti, correzioni tracciate | sì | sì | |
+| Backup v4 / ripristino integrale (schede, copie, prestiti, annullamenti, cronologia) | sì (PGlite + driver `pg`) | sì (storico); copie: Da fare | |
+| Importazione ISBN/CSV/JSON con anteprima e duplicati | sì | parziale | |
+| Modalità didattica | sì | sì (PR #3) | contenuti da far rivedere a un catalogatore |
+| Dettatura vocale (Web Speech) con inserimento manuale sempre disponibile | sì (logica) | **Da fare** | corretto un blocco: l'intestazione `Permissions-Policy` disattivava il microfono (`microphone=()` → `microphone=(self)`) |
+| Fonti reali: **Open Library** e **Library of Congress** | solo risposte simulate | **sì, 17 ott** (`npm run verifica:fonti`, eseguito dal proprietario) | Open Library: ISBN-13 e titolo+autore OK (ISBN esatti trovati). LoC: titolo+autore OK; per i 2 ISBN provati 0 risultati (copertura della fonte, non un errore). Edizioni distinte (gruppi «esatta» / «probabile» / «livello di opera») |
+| Fonte reale **Google Books** | solo risposte simulate | **non verificata**: la fonte ha risposto «limite di richieste» (probabile 429 senza chiave) | non bloccante: le altre due fonti funzionano e il messaggio all'utente è corretto. Da riprovare più tardi; se persiste serve `GOOGLE_BOOKS_API_KEY` (gratuita) |
+| Accessibilità (axe senza contrasto, tastiera), responsive | sì (axe) | parziale | contrasto e screen reader non misurati |
+
+## Stato tecnico della PR #8 (17 ott, ore 08:40)
+Commit `d0b4b35`. Deploy Preview costruita con successo (le migrazioni 0001–0006 sono state applicate al database della preview). La PR è unibile senza conflitti con `main` (`mergeable: clean`). Test: tsc pulito, 368 verdi. **Prove manuali su duplicati, conflitto, copie, backup con copie e dettatura: non ancora eseguite dal proprietario → stato «testata in automatico», non «verificata».**
+
+**Limitazioni note**: Google Books non verificata (limite di richieste; se non disponibile l'app lo segnala e usa le altre fonti); CSP assente; rate limit delle ricerche solo in memoria dell'istanza; contrasto e screen reader non misurati; contenuti didattici da far rivedere; MARC21 non è ISO 2709.
+
+## Cosa blocca il rilascio e cosa no
+**Bloccanti** (solo verifiche, nessun difetto noto aperto): (1) provare le fonti reali; (2) provare la dettatura su Chrome/Edge e su smartphone; (3) provare sulla Deploy Preview della PR #8 duplicati, conflitto e copie; (4) creare gli utenti e i ruoli di produzione.
+**Importanti non bloccanti**: CSP; limite di ricerche (rate limit) solo in memoria dell'istanza; misura del contrasto e prova con screen reader; revisione dei contenuti didattici.
+**Rimandabili**: MARC ISO 2709 interoperabile; soggettari/DDC con fonti autorevoli; E2E automatici sul sito pubblicato; monitoraggio.
+
+## Passi di pubblicazione (a cura del proprietario, in ordine)
+1. Sulla Deploy Preview della PR #8: provare duplicato, conflitto (due schede del browser aperte sulla stessa scheda), copie, dettatura (Chrome/Edge, anche smartphone).
+2. Sul tuo computer: `npm install && npm run verifica:fonti` → invia/controlla `fonti-report.txt`.
+3. Netlify → Identity: abilitata, **Invite only**, utenti invitati con ruolo `admin`/`viewer` (vedi `docs/netlify-attivazione.md`).
+4. Prima del merge: scarica un backup JSON dal sito attuale (Impostazioni) se contiene dati reali.
+5. Merge della PR #8 in `main` → Netlify pubblica e applica le migrazioni 0001–0006 al database di produzione (additive).
+6. Dopo la pubblicazione: login admin, crea una scheda `[TEST]`, scarica il backup, controlla il viewer, cancella la scheda di prova.
+Nota: le anteprime copiano i dati di produzione e i link sono pubblici.
+
+## Ambito congelato
+Nessuna nuova funzione. Tutto ciò che non è nella lista sopra va in «Versioni future».
+
+## Verifica del 17 ott (Claude)
+Migrazioni: 0001–0006, tutte additive; l'unica con `insert` è la 0006 (crea la copia n. 1 per le schede esistenti), nessun dato dimostrativo. Variabili d'ambiente lette dal codice: `NETLIFY_DB_URL` (automatica), `LOOKUP_CONTACT` e `GOOGLE_BOOKS_API_KEY` (entrambe facoltative). Nessun segreto nel repository.
+
+Stati: proposta / implementata / testata / pubblicata. «Preview» = verificato dal proprietario su Deploy Preview PR #3.
+
+## Verifiche manuali confermate dal proprietario — 16 ott 2026 (Deploy Preview PR #6 e #7)
+Riferite dal proprietario; **non eseguite da Claude** e distinte dai test automatici (che sono nelle sezioni «Risultati dei test»). Non sono verifiche di produzione.
+| Funzione | Esito dichiarato | Dove |
+|---|---|---|
+| Colonna «Stato prestito» nel catalogo | corretta | Preview PR #6/#7 |
+| Filtro per disponibilità | funziona | Preview PR #6/#7 |
+| Catalogo condiviso e ruoli admin/viewer | verificati | Preview (PR #3 il 15 ott, di nuovo a PR #6/#7) |
+| Backup v4 e ripristino (storico e correzioni) | esito positivo | Preview PR #7 |
+Il dettaglio dei singoli passaggi provati non è stato fornito: le righe sopra riportano solo ciò che è stato confermato. Il database Netlify reale è quindi stato esercitato per queste funzioni; **lo stato «testata» della colonna e del backup v4 è ora: automatica + manuale su preview; produzione: no.**
+
+
+| Funzione | Stato | Prova |
+|---|---|---|
+| Catalogo condiviso su Netlify Database (inserimento, elenco, scheda) | testata (automatica) + verificata in preview | test automatici (vedi «Risultati dei test»); admin inserisce, viewer vede il libro (proprietario) |
+| Ruoli admin/viewer verificati lato server | testata (automatica) | server/api.test.ts; viewer 403 su POST/PUT/DELETE/export |
+| Identity (login, invito) | verificata in preview (login admin e viewer) | proprietario |
+| Persistenza dopo logout/login | verificata in preview (libro visibile al viewer dopo cambio account) | proprietario |
+| Ricerca bibliografica (Open Library, Google Books) | implementata e testata con risposte simulate | API reali non ancora verificate |
+| Dettatura vocale | implementata e testata con riconoscimento simulato | browser reale non ancora provato |
+| Errori database precisi | testata | api.test.ts |
+| 403 via chiamate dirette alla preview | NON eseguita sulla preview | solo test automatici |
+| Produzione | NON pubblicata | PR #3 non unita a main |
+
+## Da sviluppare
+Esportazione/importazione JSON-CSV con validazione e backup (proposta), mappatura e validazione MARC21 con fonti autorevoli, soggettazione e Dewey didattici, funzioni di apprendimento, test di ripristino, accessibilità/responsive da verificare, gestione inviti/ruoli documentata, pubblicazione in produzione dopo conferma.
+
+## Verifiche sulla Deploy Preview PR #3 — eseguite manualmente dal proprietario (15 ott 2026)
+Non sono test automatici né verifiche in produzione.
+- Admin: inserimento di un libro; modifica e cancellazione di un record di prova esistente; POST 201; PUT/DELETE su UUID inesistente 404; export 200.
+- Viewer: vede lo stesso catalogo dell'admin; POST/PUT/DELETE/export rifiutati con 403; il record resta intatto.
+- Persistenza dopo le operazioni e dopo il cambio di account: confermata.
+
+## Test automatici (eseguiti da Claude Code, Postgres reale in locale)
+Vedi «Risultati dei test» in fondo (dato aggiornato al 16 ott 2026).
+
+## Produzione
+Nessuna verifica: nessuna pubblicazione effettuata.
+
+## Avanzamento sviluppo (branch feature/sviluppo-funzioni-complete)
+| Fase | Stato | Note |
+|---|---|---|
+| 1. Ricerca vocale e bibliografica | implementata, testata (simulazione) | Open Library, Google Books, LoC (SRU); scelta manuale/assistita; fonti reali da verificare su preview |
+| 2. Editor MARC21 | implementata, testata (automatica) | vedi docs/marc21.md; regole verificate solo per 9 campi (020, 082, 100, 245, 264, 300, 650, 653, 700); da provare su preview |
+| 3. Soggetti, Dewey, collocazione | implementata, testata (automatica) | nuova migrazione additiva 0002 (dewey_notes, dewey_source); elenco soggetti modificabile; spiegazione didattica; nessuna validazione DDC |
+| 4. Backup, importazione, esportazioni | implementata, testata (automatica, anche su Postgres) | JSON v2 (schede, copie, prestiti)/CSV/MARC testuale; importazione da CSV, elenco ISBN e backup con anteprima, conflitti e backup verificato obbligatorio (vedi docs/importazione.md; verifica manuale su preview da fare); nessuna esportazione ISO 2709 |
+| 5. Prestiti | implementata, testata (automatica, PGlite e Postgres locale con driver pg) | nuova migrazione additiva 0003 (`book_copies`, `loans`); vedi sotto; da verificare su Deploy Preview |
+
+## Fase 5 — Prestiti (stato: implementata e testata in automatico; NON verificata su preview né in produzione)
+**Modello** (`netlify/database/migrations/20261016000003_loans.sql`, solo additiva): `book_copies` (copia fisica, oggi solo la n. 1 creata al primo prestito, ma il modello ammette più copie) e `loans` (un record per prestito, mai cancellato: destinatario, recapito facoltativo, data prestito, durata prevista, data prevista, data effettiva, note, chi ha registrato). Lo stato (in prestito / in ritardo / restituito) e la disponibilità sono **derivati** dalle date, non memorizzati.
+**Regole imposte dal database**: un solo prestito attivo per copia (indice univoco parziale, regge richieste simultanee), scadenza = inizio + durata, restituzione non anteriore all'inizio, la copia appartiene al libro, cancellazione di libri/copie con prestiti rifiutata (`ON DELETE RESTRICT`) → l'API risponde 409 `has_loans`.
+**API** (verifica ruolo lato server): admin = `POST /api/books/:id/loans`, `POST /api/loans/:id/return`, `PUT /api/loans/:id`, `GET /api/loans` (filtri destinatario/stato/date/libro); nessuna DELETE (405). Viewer = solo `GET /api/books/:id/loans`, **senza** nome, recapito e note (privacy); tutto il resto 403.
+**Interfaccia**: sezione «Prestiti» nella scheda del libro (registra, restituisci, storico con durata effettiva e ritardo), pagina «Prestiti» (solo admin, con filtri), voce di menu solo per admin.
+**Limiti noti**: data odierna calcolata nel fuso Europa/Zurigo; nessuna annullamento di una restituzione registrata per errore (da gestire con nuova migrazione/decisione); nessuna interfaccia per aggiungere altre copie; il backup JSON v2 include copie e prestiti (il CSV no); nell'import i prestiti ripristinati attribuiscono l'operazione a chi importa; nessun invio di promemoria.
+**Test automatici**: `server/loans.test.ts` (doppio prestito, richieste simultanee, date incoerenti, vincoli DB saltando l'API, restituzioni non valide, storico conservato, ruoli, privacy, client HTTP), caso con driver `pg` reale in `server/pgdriver.test.ts`, `src/test/loans.test.tsx` (interfaccia). Totale 267 test, `npm run build` OK.
+| 6. Modalità didattica | implementata, testata (automatica); contenuti da far rivedere a un catalogatore | lezioni, esplora-campi, 20 esercizi con feedback motivato, spiegazione contestuale nell'editor MARC |
+
+## Fase 6 — Modalità didattica (stato: implementata e testata in automatico; NON verificata su preview)
+**Contenuti** (`src/lib/didattica/content.ts`, `src/lib/marc/glossary.ts`): 4 lezioni (quattro domande: descrizione/soggetto/classificazione/collocazione; struttura del campo; validità formale vs correttezza catalografica; errori frequenti), esplora-campi per 9 campi MARC 21, 14 esercizi a scelta e 6 diagnostici. Ogni esercizio che usa una regola MARC cita la pagina LC (consultata il 15/10/2026); le risposte diagnostiche sono **calcolate** dal controllo reale dell'editor, non scritte a mano.
+**Onestà sui limiti**: dove la risposta dipende da regole locali o fonti assenti (forma del nome, articoli da ignorare, numero Dewey corretto, soggetti da thesauri) l'esercizio lo dichiara («Attenzione») e non fornisce risposte inventate; nessun numero Dewey né termine di soggetto ufficiale è presente nei contenuti. Il punteggio non è salvato.
+**Da fare/decidere**: far rivedere i testi didattici a un catalogatore (le regole MARC sono verificate sulla fonte LC, ma la scelta degli esempi è didattica); eventuali lezioni su ISBD/RDA/REICAT e sul thesaurus italiano (es. Nuovo soggettario) richiedono fonti che l'app non ha.
+**Test**: `src/test/didattica.test.tsx` (11 test: coerenza glossario↔regole, struttura degli esercizi, feedback, filtro, editor).
+| 7. Accessibilità e rifinitura | parzialmente verificata (automatica + controllo visivo locale) | vedi sotto |
+
+## Fase 7 — Accessibilità e responsive
+**Automatico** (`src/test/a11y.test.tsx`, axe-core in jsdom): 9 schermate (admin e viewer) senza violazioni su nomi accessibili, etichette, ruoli ARIA, tabelle, struttura. Non copre contrasto dei colori, ordine visivo né screen reader reali.
+**Controllo visivo locale** (Chromium headless su una pagina di prova temporanea con dati finti, NON sulla Deploy Preview e non con Netlify Identity reale; pagina rimossa): dashboard, catalogo, scheda (admin e viewer), prestiti, didattica, nuova scheda a 375, 768 e 1280 px. Trovato e corretto un overflow orizzontale nella pagina didattica (menu a tendina con voci lunghe); poi nessun overflow orizzontale della pagina; le tabelle larghe scorrono nel proprio contenitore.
+**Da verificare a mano** su Deploy Preview: contrasto colori, uso da tastiera, dispositivi reali, dettatura vocale, fonti bibliografiche reali, prestiti con database Netlify.
+
+## Correzione prestiti e restituzioni (branch fix/prestiti-restituzioni-correzioni) — stato: implementata e testata in automatico; NON verificata sulla Deploy Preview né in produzione
+**Problemi segnalati durante il collaudo**: (1) con un libro in prestito si vedeva soltanto «registra prestito»; (2) nessun modo di correggere un'operazione sbagliata.
+**Causa individuata** (da lettura del codice; non ho potuto aprire la preview): il backend e le API di restituzione esistevano già e funzionavano (verificato dai test). La scheda libro mostrava il modulo di restituzione solo con un titolo generico («Prestito in corso»), senza un'azione chiaramente etichettata «Registra restituzione», senza riepilogo; la pagina elenco «Prestiti» non aveva alcuna azione e rimandava a un testo. Per l'errore 2 mancava del tutto il backend: non esisteva né l'annullamento di un prestito né di una restituzione, e il database non aveva dove conservare una traccia. Quindi: (1) era un difetto di interfaccia/chiarezza, (2) una funzione mancante in tutti i livelli.
+**Migrazione additiva `20261016000004_loan_corrections.sql`**: colonne `voided_at/voided_by/void_reason` su `loans` (con vincolo di coerenza), tabella `loan_corrections` (azione, motivo, autore, data, stato prima e dopo; immutabile: trigger che rifiuta UPDATE e DELETE). Nessun dato esistente è toccato. Unico oggetto sostituito: l'indice univoco «un prestito attivo per copia» (e quello dei prestiti attivi), ricreati con la condizione in più `voided_at is null`.
+**API (solo admin, verificate lato server)**: `POST /api/loans/:id/void` e `/undo-return` (corpo `{reason}`, 3–500 caratteri), `GET /api/loans/:id/corrections`. Ogni correzione è UN'unica istruzione SQL (aggiornamento + riga di traccia): se la traccia non si salva non cambia nulla. Il viewer riceve 403 su tutto, tranne la lettura dello storico di un libro, senza nome, recapito, note né motivo.
+**Regole**: un prestito annullato non si cancella e non conta più come prestito (la copia torna disponibile); non si può restituire o modificare un prestito annullato; l'annullamento della restituzione è bloccato (409 con spiegazione) se esiste un prestito successivo non annullato sulla stessa copia, e come ultima difesa dall'indice univoco; il libro con prestiti annullati resta non cancellabile (storico protetto).
+**Interfaccia**: scheda libro «Prestiti» — libro disponibile: «Registra prestito» con verifica dei dati prima del salvataggio (data prevista e durata si aggiornano a vicenda); libro in prestito: stato, destinatario, date, «Registra restituzione» (data preimpostata a oggi, modificabile, riepilogo prima di confermare) e «Annulla prestito registrato per errore»; nessun modulo per un secondo prestito. Storico con stato «annullato», azioni «Annulla registrazione della restituzione» (solo sull'ultimo prestito) e traccia delle correzioni. Pagina Prestiti: link «Registra restituzione/Gestisci» per riga e filtro «Annullati».
+**Backup**: il backup v2 NON includeva i prestiti annullati. **Corretto con il backup v3** (vedi sotto): ora annullati e cronologia correzioni sono nel file.
+**Test eseguiti realmente** (automatici): `server/corrections.test.ts` (19, Postgres/PGlite: restituzione, doppio prestito simultaneo, annullamento, motivo obbligatorio, traccia e immutabilità, atomicità con guasto simulato, annullamento restituzione e blocchi, viewer 401/403/privacy, CSRF, backup) e `src/test/loans.test.tsx` (12: libro disponibile/in prestito, verifica prima del salvataggio, riepilogo restituzione, correzioni, errore del server). 
+**Ancora da fare a mano** sulla Deploy Preview, con un libro creato apposta (es. «[TEST] Prestiti») e mai su libri reali: registrare e restituire; annullare un prestito errato; annullare una restituzione; provare il blocco con un prestito successivo; verificare da viewer che i pulsanti non compaiano e che le chiamate dirette diano 403; verificare le chiamate `void`/`undo-return` sul database Netlify reale (finora solo PGlite).
+
+---
+
+# Colonna «Stato prestito» e audit completo (branch `feature/stato-prestito-audit`, PR #6 → `main` solo per ottenere la Deploy Preview)
+
+Stato della colonna: **implementata e testata in automatico (PGlite = Postgres reale in-process + interfaccia)**. **Non verificata sulla Deploy Preview dal proprietario, non in produzione.**
+
+## Colonna «Stato prestito»: regole
+- **Stati**: Disponibile / In prestito / In ritardo / Disponibilità parziale («N di M copie disponibili» quando le copie sono più di una). Ogni stato ha icona **e** testo (non solo colore). Sul telefono è un'etichetta nella scheda del libro.
+- **Fonte dei dati**: database, tramite `GET /api/books` (campo `availability` per ogni libro della pagina). Una sola query aggiuntiva per pagina (`availabilityFor`), mai una per libro.
+- **Prestito che conta**: solo quelli non restituiti **e** non annullati (`returned_date is null and voided_at is null`). Storico e annullati non influenzano la disponibilità.
+- **Copie**: totale = max(1, righe in `book_copies`, numero di copia più alto). Oggi la copia 1 nasce al primo prestito, quindi un libro mai prestato conta 1 copia disponibile.
+- **Priorità quando le copie sono in stati diversi**: In ritardo > Disponibilità parziale > In prestito > Disponibile. (Un libro con 2 copie, una in ritardo e una libera, risulta «In ritardo»; il dettaglio «1 di 2 copie disponibili» resta visibile.)
+- **Regola del ritardo**: un prestito è in ritardo **solo se oggi è successivo alla data prevista**; nel giorno di scadenza **non** è in ritardo. «Oggi» è la data nel fuso **Europa/Zurigo** (`todayIso`), calcolata dal server e passata alle query: così non si segnala un ritardo prima della scadenza effettiva né il browser dell'utente può falsarlo.
+- **Filtro «Disponibilità»**: Tutti / Disponibili / In prestito / In ritardo / Disponibilità parziale, combinabile con ricerca, stato scheda e paginazione (filtro lato server, `?loan=`). «In prestito» = almeno una copia prestata e nessuna in ritardo o parziale; i filtri coincidono con gli stati mostrati.
+- **Aggiornamento**: la colonna si ricarica dopo prestito, restituzione, annullamento, correzione e modifica della data prevista (i dati vengono riletti all'apertura del catalogo e quando la scheda torna visibile, `visibilitychange`).
+- **Privacy**: admin e viewer ricevono lo stesso `availability` (solo stato e conteggi); nessun nome, recapito o nota arriva al viewer. Permessi invariati (viewer: solo GET su libri/statistiche; prestiti, export, lookup: solo admin).
+- **File**: `src/lib/api/loans.ts` (`summarizeAvailability`, tipi), `server/booksRepo.ts` (`availabilityFor`, filtro), `server/router.ts`, `src/components/app/LoanBits.tsx` (`AvailabilityBadge`), `src/routes/_app.catalogo.index.tsx`.
+
+### I 10 test richiesti
+| # | Richiesta | Dove (automatico) |
+|---|---|---|
+| 1–4 | disponibile / in prestito / in ritardo / storico senza prestiti attivi; giorno di scadenza | `server/availability.test.ts` (regola pura, stati 1–4, confine del giorno di scadenza) |
+| 5 | prestito annullato non influisce | `server/availability.test.ts`, `server/corrections.test.ts` |
+| 6 | più copie fisiche | `server/availability.test.ts` (createLoan con numero di copia) |
+| 7 | aggiornamento dopo prestito/restituzione/correzione | `server/availability.test.ts` (ciclo di vita); `src/test/availability.test.tsx` (interfaccia) |
+| 8–9 | coerenza admin/viewer e assenza di dati personali | `server/availability.test.ts` (privacy), `server/corrections.test.ts` |
+| 10 | filtri e ricerca, paginazione, numero di query costante | `server/availability.test.ts`; `src/test/availability.test.tsx` |
+
+## Problema critico corretto durante l'audit: backup incompleto → **backup v3**
+Il backup v2 **escludeva i prestiti annullati e non conteneva la cronologia delle correzioni**: un ripristino avrebbe perso storico e tracciabilità. Corretto senza riscrivere il sistema (migrazione: nessuna, solo codice):
+- **Esportazione v3** (`src/lib/export.ts`): schede, copie, prestiti **compresi gli annullati** (`voided: {at, by, reason}`) e `corrections[]` (azione, motivo, autore, data, stato prima/dopo). Contatori `loanCount`, `voidedLoanCount`, `correctionCount`.
+- **Verifica di rilettura** prima del salvataggio (Impostazioni): il file viene riletto e si confrontano schede, prestiti, annullati e correzioni; se non tornano il backup non viene consegnato.
+- **Ripristino** (`src/lib/backup.ts`): v1, v2 e v3 leggibili. Un prestito annullato torna **annullato** (non attivo), con una riga di traccia che cita l'annullamento originale (data, autore, motivo). Riconoscimento dei duplicati: un secondo ripristino non crea doppioni. Il ripristino non cancella nulla.
+- **Limiti noti del ripristino**: la cronologia delle correzioni *non annullative* (es. «annulla restituzione») resta nel file ma non viene riscritta riga per riga nel database (l'API non permette di inserire storico arbitrario: sarebbe un modo di falsificarlo); chi ripristina risulta autore della registrazione; id e date di creazione si rigenerano; solo copia n. 1.
+- **Test**: `server/corrections.test.ts` (round trip su Postgres/PGlite: annullato → backup → ripristino → ancora annullato con traccia, copia libera, secondo ripristino senza duplicati; v2 ancora leggibile con avviso).
+
+## Risultati dei test (16 ott 2026, eseguiti da Claude nel sandbox)
+- `npx vitest run`: 348 test al 16 ott mattina (PR #6); dopo il backup v4: vedi riga seguente.
+- `npx tsc --noEmit`: nessun errore. `npm run build`: OK.
+- Cosa NON copre: Netlify Identity reale, funzioni su Netlify, database Netlify reale (qui PGlite e, per `pgdriver.test.ts`, driver `pg`), fonti bibliografiche reali, dettatura reale, contrasto colori, screen reader.
+- Il sandbox non può raggiungere le Deploy Preview: **nessuna verifica su preview è stata eseguita da Claude in questa fase**.
+
+## Verifiche manuali: stato
+| Dove | Cosa | Stato |
+|---|---|---|
+| Preview PR #3 (proprietario, 15 ott) | login admin e viewer, inserimento/modifica/cancellazione, 403 viewer, persistenza | **eseguita** |
+| Preview PR #4 | correzione prestiti/restituzioni | contenuto presente nella preview; verifica manuale **non documentata** |
+| Preview PR #6 | colonna, filtro, backup v3 | **da eseguire** (checklist nel messaggio di consegna) |
+| Produzione | tutto | **nulla pubblicato** |
+
+## Matrice delle funzionalità
+Legenda: **V** = Completata e verificata (automatica + verifica reale documentata) · **NV** = Implementata ma non verificata sufficientemente · **P** = Parzialmente implementata · **M** = Mancante · **B** = Bloccata da configurazione/decisione. «Auto» = test automatici; «Prev.» = verifica manuale su preview; «Prod.» = produzione (nessuna per nessuna voce).
+
+| # | Area / funzione | Stato | Evidenze e file | Auto | Prev. | Lacune, rischi, priorità |
+|---|---|---|---|---|---|---|
+| 1 | Login Netlify Identity, ruoli admin/viewer, verifica server-side | **V** (login/ruoli) | `netlify/functions/api.mts`, `server/router.ts`, `server/auth` | `server/api.test.ts` (401/403, CSRF) | PR #3: login e 403 provati | Ruoli assegnabili solo dal pannello Netlify (nessuna UI utenti): documentato. Priorità media |
+| 2 | Catalogo, dashboard, ricerca, filtri, ordinamento | **NV** | `src/routes/_app.catalogo.index.tsx`, `server/booksRepo.ts` | sì (api, UI) | PR #3: elenco e persistenza; filtri/ordinamento non documentati | verificare su preview con molti record (paginazione). Alta |
+| 3 | Inserimento, modifica, cancellazione schede | **V** (CRUD base) / **P** (concorrenza) | `BookForm`, `booksRepo` | sì | PR #3: provati | Nessun controllo di modifiche concorrenti (due admin: vince l'ultimo). Media |
+| 4 | Dettatura vocale e ricerca multi-fonte (Open Library, Google Books, LoC SRU) | **NV** | `server/sources/*`, `/api/lookup` | solo con risposte simulate | **mai** con fonti/microfono reali | Dipende da servizi esterni non verificati; limiti di frequenza e cache solo in memoria per istanza. **Alta** |
+| 5 | Importazione ISBN / CSV / JSON | **NV** | `src/lib/backup.ts`, `ImportPanel`, `docs/importazione.md` | sì (anche Postgres) | non eseguita | Provare con file `[TEST]` su preview. **Alta** |
+| 6 | Deduplicazione (ID, ISBN, titolo+autore, nel file) e fusione fonti | **P** | `planRestore`; lookup manuale/assistita | sì | no | Nessun avviso di duplicato alla creazione manuale; ISBN non unico nel DB. Media |
+| 7 | Editor MARC21 (indicatori, sottocampi, ripetibili, validazione) | **NV** | `src/lib/marc/*`, `docs/marc21.md` | sì | no | Regole verificate solo per 9 campi; **non** un MARC interoperabile (nessun ISO 2709). Alta |
+| 8 | Soggetti, Dewey, collocazione | **NV** | migrazione 0002, `BookForm` | sì | no | Nessuna validazione DDC/soggettari: solo indicazione didattica. Media |
+| 9 | Backup, ripristino, esportazioni (JSON v3, CSV, MARC testuale) | **NV** (dopo correzione) | `src/lib/export.ts`, `backup.ts` | sì, round trip su Postgres | no | **Mai provato un ripristino reale su preview**; `/api/export` in una sola risposta (limite ~6 MB); cronologia correzioni non annullative non riscritta; nessun backup automatico/programmato. **Critica** |
+| 10 | Copie fisiche e disponibilità | **P** | `book_copies`, `summarizeAvailability` | sì | no | Nessuna UI per aggiungere/rimuovere copie: la copia 1 nasce al primo prestito; backup ripristina solo copia 1. Alta |
+| 11 | Prestiti, restituzioni, ritardi, annullamenti, correzioni tracciate | **NV** | migrazioni 0003/0004, `loansRepo`, `BookLoans` | sì (19+12+…) | PR #4 contiene il codice; verifica manuale non documentata | Provare su preview con libro `[TEST]` e DB Netlify reale (finora PGlite). Nessun promemoria. **Alta** |
+| 12 | Colonna «Stato prestito» + filtro | **NV** | vedi sezione sopra | sì | da eseguire | Verifica su preview con dati reali. **Alta** |
+| 13 | Modalità didattica | **NV** | `src/lib/didattica/*` | sì | no | Contenuti da far rivedere a un catalogatore; nessun progresso salvato. Media |
+| 14 | Sicurezza API | **NV** | CSRF `x-bibliotheca`, ruoli, privacy viewer | sì | PR #3: 403 sul viewer | Nessun CSP; rate limit solo in memoria; test 403 con chiamate dirette alla preview non eseguito. Alta |
+| 15 | Accessibilità, tastiera, contrasto, responsive | **P** | `src/test/a11y.test.tsx`, controllo visivo locale | axe (senza contrasto) | no | Contrasto non testato; nessun test con screen reader o dispositivi reali. Media |
+| 16 | Errori, prestazioni, manutenzione, documentazione | **P** | messaggi in italiano, migrazioni additive | sì | no | Nessun E2E sull'app pubblicata; nessun monitoraggio; documenti storici da tenere allineati. Media |
+| 17 | Netlify: config, migrazioni, variabili, preview vs produzione, costi | **P** / **B** | `netlify.toml`, `netlify/database/migrations/` | — | preview funzionante | Anteprime copiano i dati di produzione e sono pubbliche per link; i **crediti Free** (sospensione a esaurimento) e il costo reale di Netlify Database **non sono monitorati**: da controllare nel dashboard. La preview è costruita solo per PR verso `main`. **Alta** |
+
+**Cosa NON è «completo» anche se esiste una schermata**: ricerca fonti reali, dettatura, import/ripristino reale, MARC21 interoperabile, copie multiple da interfaccia, tutte le verifiche di produzione.
+
+## Lacune critiche (in ordine)
+1. **Ripristino mai provato su un database reale** (dati persi se fallisce in un momento di bisogno). Fix: test manuale su preview + (roadmap) backup periodico.
+2. ~~Backup senza annullati/cronologia~~ → **corretto (v3)**.
+3. **Nessun backup automatico**: dipende dal fatto che l'admin scarichi il file. 
+4. **Esportazione in un'unica risposta** (limite ~6 MB per funzione): con cataloghi molto grandi il backup potrebbe fallire. Oggi mitigato: l'export JSON è composto dal browser leggendo a pagine.
+5. **Copie fisiche non gestibili dall'interfaccia** → il conteggio «M copie» resta 1 finché non si prestano più copie via API.
+6. **Fonti bibliografiche e dettatura non verificate** con servizi reali (dipendenza esterna, limiti non provati).
+7. **Costi/quote Netlify non verificati**: sospensione del sito a crediti esauriti.
+8. Duplicati non prevenuti alla creazione manuale; nessuna concorrenza ottimistica sulle modifiche.
+9. Nessun CSP; rate limit non condiviso tra istanze.
+
+## Roadmap
+**A. Indispensabile per la prima versione completa**
+| Attività | Risultato / motivazione | Dipende da | Accettazione e test | Azione manuale | Costi/limiti |
+|---|---|---|---|---|---|
+| A1 Verifica manuale PR #6 su preview (colonna, filtro, prestiti, backup v3) | prova su DB Netlify reale | preview pronta | checklist consegnata: tutte le voci OK | tu | CHF 0 |
+| A2 Prova di ripristino reale (backup → import su preview) | affidabilità del ripristino | A1 | zero duplicati al secondo import; annullati restano annullati | tu, con libri `[TEST]` | CHF 0 |
+| A3 Verifica fonti reali + dettatura | smentire/confermare il lookup | — | 3 ISBN reali trovati; dettatura in Chrome | tu | API gratuite con limiti |
+| A4 Gestione copie dall'interfaccia (aggiungi/rimuovi copia, ripristino multi-copia) | rende vera la «disponibilità parziale» | A1 | test su DB + UI; nessuna perdita di prestiti | — | CHF 0 |
+| A5 Avviso duplicati alla creazione manuale + conflitto di modifica | evita doppioni e sovrascritture | — | test server + UI | — | CHF 0 |
+| A6 Controllo quote/costi Netlify | evita sospensione | accesso al dashboard | quota documentata, nessun auto-recharge | tu | verificare |
+| A7 Pubblicazione in produzione | solo dopo A1–A3, A6 e tua conferma esplicita | A1–A6 | verifiche di produzione registrate | tu | — |
+
+**B. Importante dopo la prima versione:** esportazione a pagine/streaming; backup periodico (Netlify scheduled function → Blob, solo se i costi restano a zero); CSP e rate limit persistente; test contrasto; E2E sulla preview (Playwright, se la rete lo consente); UI gestione utenti/ruoli; revisione dei contenuti didattici da un catalogatore; riscrittura della cronologia di correzione nel ripristino con endpoint dedicato e firmato.
+**C. Opzionale:** MARC21 ISO 2709, promemoria di scadenza, soggettari/Dewey con fonti ufficiali, statistiche sulle letture.
+
+## Documenti tecnici da leggere insieme
+`docs/importazione.md` (backup v3), `docs/database.md` (migrazioni), `docs/marc21.md`, `docs/netlify-attivazione.md`, `docs/ricerca-bibliografica.md`, `docs/decisioni-e-stato.md`.
+
+---
+
+# Backup v4 — ripristino integrale dello storico (branch `feature/backup-v4-storico-completo`)
+
+**Stato: implementata e testata in automatico (PGlite = motore Postgres + driver `pg` reale su Postgres locale Netlify). NON verificata sulla Deploy Preview, NON in produzione. Non va considerata completa finché la verifica reale sulla preview (checklist nel messaggio di consegna) non ha confermato il ripristino integrale.**
+
+## Lacuna chiusa e analisi
+La v3 conservava nel file le correzioni, ma il ripristino ricostruiva solo l'annullamento del prestito (una riga di traccia sintetica, con autore = chi ripristina). Le «restituzioni annullate» e l'ordine delle correzioni andavano perse. Non si poteva risolvere dal client: l'API non permette (giustamente) di scrivere storico arbitrario riga per riga, e farlo con più chiamate avrebbe lasciato stati a metà. Motivazione della scelta architetturale: **un solo endpoint riservato all'admin che riceve prestiti + cronologia e li scrive con UNA sola istruzione SQL** (tutto o niente), dopo la stessa validazione già eseguita dal client.
+
+## Cosa contiene il backup v4
+Schede, MARC21, copie fisiche e, per **ogni prestito** (attivo, concluso, annullato): identificativo originale, destinatario, date, durata, chi e quando lo ha registrato, chi lo ha restituito, annullamento (data, autore, motivo) e la sua **cronologia completa di correzioni** (azione, motivo, autore, data, stato prima/dopo), in ordine cronologico. I contatori `loanCount`, `voidedLoanCount`, `correctionCount` permettono di accorgersi di un file troncato. v1, v2 e v3 restano leggibili (con avviso su cosa non contengono).
+
+## Come funziona il ripristino
+1. **Validazione prima di toccare il database** (`parseBackup`): ogni scheda con le regole del server; ogni prestito con la **stessa funzione del server** (`parseRestoreInput`/`checkLoanHistory`): dati validi, correzioni in ordine di tempo, un prestito annullato ha come ultima correzione proprio quell'annullamento (stesso autore, data, motivo), nessuna correzione dopo l'annullamento, restituzioni annullate coerenti, nessun doppio prestito attivo sulla stessa copia. Se un prestito non è valido il **ripristino dei prestiti è bloccato per intero** (le schede si possono comunque importare da sole): nessuna importazione di prestiti a metà.
+2. **Piano** (`planLoanRestore`, ancora senza scrivere): per ogni prestito dice se è nuovo, **già presente e identico** (stesso id e stessa storia → saltato), **con dati diversi** (stesso id ma diverso nel database → NON sovrascritto, segnalato), **probabile duplicato** (stesso destinatario/data/durata ma id diverso → saltato, segnalato), **bloccato** (la copia è già in prestito a un altro → segnalato) o senza scheda.
+3. **Scrittura atomica** `POST /api/loans/restore` (solo admin, CSRF, ruolo verificato sul server prima di leggere il database): copie mancanti + prestiti + correzioni in un'unica istruzione. Se anche solo un elemento viola un vincolo (scheda inesistente, copia già in prestito) **non viene scritto nulla**. Identificativi già presenti vengono saltati: ripetere il ripristino non crea duplicati.
+4. **Tracciabilità**: autore e data originali restano nelle colonne di sempre; la migrazione additiva `20261016000005_restore_provenance.sql` aggiunge soltanto `restored_at/restored_by` (chi ha eseguito il ripristino e quando) a `loans` e `loan_corrections`. La traccia ripristinata resta immutabile (trigger).
+5. **Verifica finale** (`verifyLoanRestore`): dopo la scrittura l'app rilegge dal database prestiti e correzioni e li confronta col file; mostra «Verifica finale superata» o l'elenco delle differenze.
+6. **Backup precedenti**: v3 → l'annullamento è ricostruito con autore, data e motivo veri del file; v2/v3 non contengono chi ha registrato un prestito (subentra chi ripristina) né le altre correzioni.
+
+## Limiti dichiarati
+- Dopo un ripristino di un backup di una versione precedente alla v4 mancano, per costruzione del file, autori della registrazione e correzioni diverse dall'annullamento.
+- Tutti i prestiti del file entrano in una sola richiesta (massimo 3000 prestiti, 5 MB): oltre, il ripristino è rifiutato con un messaggio (non spezzato, per non perdere l'atomicità).
+- Le schede si ripristinano con richieste separate (ognuna atomica): se il processo si interrompe dopo le schede e prima dei prestiti, basta ripetere l'importazione (le schede già presenti vengono riconosciute e i prestiti si ripristinano).
+- Le date/ore sono salvate al secondo.
+- Id e date di creazione delle schede non si conservano (invariato).
+- I prestiti già presenti con dati diversi non vengono mai sovrascritti: vanno risolti a mano.
+
+## Test (automatici)
+`server/restoreV4.test.ts` (6, Postgres): **andata e ritorno** con prestito attivo, restituito, annullato, restituzione annullata (e poi di nuovo restituito), restituzione annullata + prestito annullato e seconda copia → backup originale e backup ripristinato **equivalenti** (impronta della storia per scheda: id, autori, date, motivi, stati prima/dopo, ordine delle correzioni), disponibilità e stati identici, provenienza registrata, traccia immutabile; importazione ripetuta = nessun duplicato e backup identico; dati diversi non sovrascritti; **atomicità** (un elemento inesistente o in conflitto → zero righe scritte); validazione (cronologia incoerente rifiutata, doppi attivi); permessi (viewer 403, senza sessione 401, senza CSRF 403, nulla scritto); compatibilità v3/v2. `server/pgdriver.test.ts`: lo stesso ripristino col driver `pg` reale, compreso il rollback. `server/import.test.ts` e `server/corrections.test.ts` adeguati.
+
+**Risultati (16 ott 2026, sandbox):** `npx vitest run` → **354 test, 23 file, tutti passati**; `npx tsc --noEmit` senza errori; `npm run build` riuscita. Nuovi: `server/restoreV4.test.ts` (6), un test `pg` reale in `server/pgdriver.test.ts`, 2 test di interfaccia in `src/test/restore.test.tsx`, test adeguati in `server/import.test.ts`. **Nessuna verifica su Deploy Preview eseguita da Claude** (il sandbox non la raggiunge).
+
+---
+
+# Copie fisiche (branch `feature/copie-affidabilita`) — stato: implementata e testata in automatico; NON verificata su Deploy Preview
+
+## Cosa c'è
+- **Modello**: ogni scheda ha almeno la copia n. 1 (creata insieme alla scheda; la migrazione `20261016000006_copy_details.sql` la crea per le schede esistenti). Ogni copia ha numero, **codice di inventario** (facoltativo, univoco senza distinguere maiuscole/spazi, max 50 caratteri) e **note** (max 500). Le copie **non si cancellano**: il numero non viene mai riusato.
+- **Interfaccia (scheda del libro)**: tabella «Copie fisiche (N)» con stato per copia; l'amministratore può «Aggiungere una copia» e «Modificare» codice e note. Il visualizzatore vede le copie, senza azioni.
+- **Prestiti per copia**: il prestito sceglie la prima copia libera o quella indicata; ogni copia ha al massimo un prestito attivo; restituzione, annullamento e correzioni agiscono sul prestito della copia. Il catalogo mostra «in prestito», «disponibilità parziale» (N di M copie), «in ritardo» secondo le regole già in vigore.
+- **Backup**: il file v4 contiene l'elenco completo delle copie (anche senza prestiti, con codice e note) e `copyCount`. Il ripristino crea le copie mancanti, **non sovrascrive** codice o note già presenti, è idempotente e, a fine operazione, rilegge il database e confronta le copie con il file.
+
+## Difetto trovato e corretto durante i test
+`addCopy` usava una sola istruzione SQL che reinseriva la riga e poi la rileggeva nella stessa query: la riga non era visibile, quindi il codice ritentava e **inseriva 4 copie invece di 1**. Corretto con `RETURNING`; coperto da `server/copies.test.ts`.
+
+## Test automatici (Claude, sandbox)
+Risultato complessivo: tsc pulito, **364 test su 364** verdi, build riuscita.
+
+`server/copies.test.ts` (API su Postgres reale/PGlite: aggiunta, codice duplicato 409, modifica, nessuna cancellazione 405, permessi viewer 403, prestiti per copia con disponibilità parziale, ripristino con copie idempotente, file con codici duplicati rifiutato); `src/test/copies.test.tsx` (interfaccia admin/viewer); `server/restoreV4.test.ts` esteso (andata e ritorno con seconda copia e codice: 6 prestiti + 6 copie verificati).
+
+## Da verificare a mano sulla Deploy Preview
+1. Apri una scheda → «Aggiungi una copia» con codice → compare nella tabella.
+2. Riprova lo stesso codice (anche in maiuscolo) su un'altra scheda → messaggio di errore chiaro.
+3. Registra due prestiti su due copie: catalogo = «disponibilità parziale»; restituisci uno → torna «in prestito» o «disponibile» di conseguenza.
+4. Impostazioni → scarica il backup, ripristinalo in un catalogo vuoto (o su un secondo ambiente) → copie e codici identici.
