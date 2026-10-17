@@ -21,7 +21,8 @@ Legenda: **Auto** = test automatici (Claude, sandbox, Postgres reale in locale) 
 | Importazione ISBN/CSV/JSON con anteprima e duplicati | sì | parziale | |
 | Modalità didattica | sì | sì (PR #3) | contenuti da far rivedere a un catalogatore |
 | Dettatura vocale (Web Speech) con inserimento manuale sempre disponibile | sì (logica) | **Da fare** | corretto un blocco: l'intestazione `Permissions-Policy` disattivava il microfono (`microphone=()` → `microphone=(self)`) |
-| Fonti reali Open Library / Google Books / LoC | solo risposte simulate | **Da fare** | dal sandbox non raggiungibili; script pronto: `npm run verifica:fonti` |
+| Fonti reali: **Open Library** e **Library of Congress** | solo risposte simulate | **sì, 17 ott** (`npm run verifica:fonti`, eseguito dal proprietario) | Open Library: ISBN-13 e titolo+autore OK (ISBN esatti trovati). LoC: titolo+autore OK; per i 2 ISBN provati 0 risultati (copertura della fonte, non un errore). Edizioni distinte (gruppi «esatta» / «probabile» / «livello di opera») |
+| Fonte reale **Google Books** | solo risposte simulate | **non verificata**: la fonte ha risposto «limite di richieste» (probabile 429 senza chiave) | non bloccante: le altre due fonti funzionano e il messaggio all'utente è corretto. Da riprovare più tardi; se persiste serve `GOOGLE_BOOKS_API_KEY` (gratuita) |
 | Accessibilità (axe senza contrasto, tastiera), responsive | sì (axe) | parziale | contrasto e screen reader non misurati |
 
 ## Cosa blocca il rilascio e cosa no
