@@ -74,3 +74,30 @@ describe("Nuovo libro — avviso duplicati", () => {
     expect((await api.listBooks({})).items).toHaveLength(2);
   });
 });
+
+describe("Cancellazione definitiva con storico", () => {
+  it("scheda con prestiti: prima il rifiuto, poi la conferma con il titolo esatto, poi la scheda sparisce", async () => {
+    const user = userEvent.setup();
+    const api = makeMemoryApi([makeBook({ id: "1", title: "Libro con storico" })], { role: "admin" });
+    await api.createLoan("1", { borrower: "Marta", contact: "", loanDate: "2026-10-01", plannedDays: 10, notes: "" });
+    const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/catalogo/1"] }) });
+    render(
+      <AuthProvider identity={makeFakeIdentity({ session: true, roles: ["admin"] }).identity}>
+        <BooksApiProvider api={api}><RouterProvider router={router} /></BooksApiProvider>
+      </AuthProvider>,
+    );
+    await user.click(await screen.findByRole("button", { name: /Cancella$/ }));
+    await user.click(screen.getByRole("button", { name: "Cancella definitivamente" }));
+    expect(await screen.findByText(/Cancellare la scheda e tutto il suo storico/)).toBeInTheDocument();
+    const go = screen.getByRole("button", { name: "Cancella scheda e storico" });
+    expect(go).toBeDisabled();
+    await user.type(screen.getByLabelText(/titolo esatto/), "Libro con storic");
+    expect(go).toBeDisabled();
+    await user.type(screen.getByLabelText(/titolo esatto/), "o");
+    expect(go).toBeEnabled();
+    await user.click(go);
+    await screen.findByRole("heading", { name: /Catalogo/ });
+    expect(api.all()).toHaveLength(0);
+    expect(api.allLoans()).toHaveLength(0);
+  });
+});

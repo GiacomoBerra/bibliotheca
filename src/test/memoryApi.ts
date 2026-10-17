@@ -194,9 +194,15 @@ export function makeMemoryApi(initial: Book[] = [], opts: { failWith?: string; l
       books = books.map((x) => (x.id === id ? b : x));
       return b;
     },
-    async deleteBook(id) {
+    async deleteBook(id, o) {
       fail();
-      if (!books.some((b) => b.id === id)) throw new BooksApiError("notfound", "La scheda non esiste più: nulla da cancellare.");
+      const bk = books.find((b) => b.id === id);
+      if (!bk) throw new BooksApiError("notfound", "La scheda non esiste più: nulla da cancellare.");
+      if (loans.some((l) => l.bookId === id)) {
+        if (!o) throw new BooksApiError("conflict", "Questo libro ha uno storico di prestiti, che viene conservato: la scheda non può essere cancellata.", "has_loans");
+        if (o.confirmTitle.trim() !== bk.title.trim()) throw new BooksApiError("validation", "Il titolo scritto non coincide con quello della scheda: nulla è stato cancellato.");
+        loans = loans.filter((l) => l.bookId !== id);
+      }
       books = books.filter((b) => b.id !== id);
     },
     async getStats() {

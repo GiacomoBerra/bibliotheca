@@ -111,6 +111,17 @@ export async function updateBook(db: Db, userId: string, id: string, input: Book
   return null;
 }
 
+export interface PurgeResult { loans: number; corrections: number; copies: number }
+
+/** Cancella la scheda INSIEME a copie, prestiti e cronologia delle correzioni (funzione SQL purge_book: tutto o niente). Irreversibile. */
+export async function purgeBook(db: Db, id: string): Promise<PurgeResult | null> {
+  if (!isUuid(id)) return null;
+  const r = await db.query<{ r: { deleted: number; loans: number; corrections: number; copies: number } }>(`select purge_book($1::uuid) as r`, [id]);
+  const o = r.rows[0]?.r;
+  if (!o || Number(o.deleted) === 0) return null;
+  return { loans: Number(o.loans), corrections: Number(o.corrections), copies: Number(o.copies) };
+}
+
 export async function deleteBook(db: Db, id: string): Promise<boolean> {
   if (!isUuid(id)) return false;
   const r = await db.query(`delete from books where id = $1 returning id`, [id]);

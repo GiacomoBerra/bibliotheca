@@ -52,3 +52,6 @@ Il JSON esportato (`format: bibliotheca-backup`, `version: 3`; v1 e v2 restano l
 
 ## Migrazione 0005 — provenienza dei ripristini (additiva)
 `20261016000005_restore_provenance.sql`: colonne facoltative `restored_at`/`restored_by` su `loans` e `loan_corrections` (con vincolo «entrambe o nessuna»). Nessun dato esistente è modificato. Il ripristino da backup (`POST /api/loans/restore`) inserisce prestiti e correzioni con autore e date originali e valorizza queste colonne; le righe create direttamente nell'app le lasciano vuote. La tabella `loan_corrections` resta immutabile (trigger su UPDATE/DELETE).
+
+## Migrazione 0007 (17 ott 2026) — `purge_book()`
+Additiva. Aggiunge la funzione `purge_book(uuid)` (cancella correzioni, prestiti, copie e scheda in una sola transazione) e sostituisce `loan_corrections_immutable()` perché consenta la DELETE della traccia solo quando `purge_book` imposta `bibliotheca.purge_book = on` per la transazione corrente. Ogni altra UPDATE/DELETE sulla traccia è ancora rifiutata. Usata solo da `DELETE /api/books/:id?withHistory=1` (admin, con titolo di conferma).

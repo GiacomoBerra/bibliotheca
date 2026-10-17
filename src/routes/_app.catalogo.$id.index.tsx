@@ -6,6 +6,9 @@ import { BookLoans } from "@/components/app/BookLoans";
 import { ErrorBox, IllustrativeNote, Loading, StatusPill } from "@/components/app/common";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { BooksApiError } from "@/lib/api/errors";
 import { useBooksApi } from "@/lib/api/BooksApiContext";
 import { DEWEY_SOURCE_LABELS, type Book, type MarcField } from "@/lib/api/types";
 import { useAsync } from "@/lib/useAsync";
@@ -45,16 +48,20 @@ function Dettaglio({ book: b }: { book: Book }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [delError, setDelError] = useState<string | null>(null);
+  /** true quando il server ha risposto che la scheda ha uno storico di prestiti: si offre la cancellazione completa. */
+  const [hasHistory, setHasHistory] = useState(false);
+  const [typedTitle, setTypedTitle] = useState("");
 
-  async function remove() {
+  async function remove(withHistory = false) {
     setBusy(true);
     setDelError(null);
     try {
-      await api.deleteBook(b.id);
+      await (withHistory ? api.deleteBook(b.id, { withHistory: true, confirmTitle: typedTitle }) : api.deleteBook(b.id));
       setConfirm(false);
       await navigate({ to: "/catalogo" });
     } catch (e) {
-      setDelError(e instanceof Error ? e.message : "Cancellazione non riuscita.");
+      if (e instanceof BooksApiError && e.code === "has_loans") { setHasHistory(true); setDelError(null); }
+      else setDelError(e instanceof Error ? e.message : "Cancellazione non riuscita.");
     } finally {
       setBusy(false);
     }
@@ -107,16 +114,28 @@ function Dettaglio({ book: b }: { book: Book }) {
 
       <MarcView book={b} />
 
-      <Dialog open={confirm} onOpenChange={(o) => !busy && setConfirm(o)}>
+      <Dialog open={confirm} onOpenChange={(o) => { if (!busy) { setConfirm(o); if (!o) { setHasHistory(false); setTypedTitle(""); setDelError(null); } } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancellare questa scheda?</DialogTitle>
-            <DialogDescription>«{b.title}» verrà eliminata in modo definitivo. L'operazione non si può annullare e il piano gratuito non include backup automatici.</DialogDescription>
+            <DialogTitle>{hasHistory ? "Cancellare la scheda e tutto il suo storico?" : "Cancellare questa scheda?"}</DialogTitle>
+            <DialogDescription>
+              {hasHistory
+                ? <>«{b.title}» ha un <strong>storico di prestiti</strong>. Proseguendo verranno eliminati in modo definitivo la scheda, le sue copie, tutti i prestiti e la cronologia delle correzioni. Non si può annullare e non esistono backup automatici: se ti serve, scarica prima un backup da Impostazioni.</>
+                : <>«{b.title}» verrà eliminata in modo definitivo. L&apos;operazione non si può annullare e il piano gratuito non include backup automatici.</>}
+            </DialogDescription>
           </DialogHeader>
+          {hasHistory && (
+            <div>
+              <Label htmlFor="conferma-titolo">Per confermare scrivi il titolo esatto della scheda</Label>
+              <Input id="conferma-titolo" value={typedTitle} onChange={(e) => setTypedTitle(e.target.value)} autoComplete="off" />
+            </div>
+          )}
           {delError && <ErrorBox message={delError} />}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirm(false)} disabled={busy}>Annulla</Button>
-            <Button variant="destructive" onClick={() => void remove()} disabled={busy}>{busy ? "Cancellazione…" : "Cancella definitivamente"}</Button>
+            <Button variant="outline" onClick={() => { setConfirm(false); setHasHistory(false); setTypedTitle(""); }} disabled={busy}>Annulla</Button>
+            {hasHistory
+              ? <Button variant="destructive" onClick={() => void remove(true)} disabled={busy || typedTitle.trim() !== b.title.trim()}>{busy ? "Cancellazione…" : "Cancella scheda e storico"}</Button>
+              : <Button variant="destructive" onClick={() => void remove()} disabled={busy}>{busy ? "Cancellazione…" : "Cancella definitivamente"}</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
