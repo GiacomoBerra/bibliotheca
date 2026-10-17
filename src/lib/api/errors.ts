@@ -1,8 +1,11 @@
 /** Errore del livello dati con messaggio già pronto per l'utente (in italiano). */
 export class BooksApiError extends Error {
   readonly kind: "auth" | "network" | "validation" | "notfound" | "conflict" | "unavailable" | "unknown";
-  constructor(kind: BooksApiError["kind"], message: string) {
+  /** Codice dell'errore del server, se c'è (es. "has_loans"). */
+  readonly code?: string;
+  constructor(kind: BooksApiError["kind"], message: string, code?: string) {
     super(message);
+    if (code) this.code = code;
     this.name = "BooksApiError";
     this.kind = kind;
   }
@@ -22,7 +25,7 @@ export function mapHttpError(status: number, body: unknown): BooksApiError {
     const detail = err.fields ? Object.values(err.fields).filter((v) => typeof v === "string").join(" ") : "";
     return new BooksApiError("validation", detail || err.message || "Alcuni campi non sono validi.");
   }
-  if (status === 409) return new BooksApiError("conflict", err.message ?? "L'operazione è in conflitto con lo stato attuale dei dati: ricarica la pagina e riprova.");
+  if (status === 409) return new BooksApiError("conflict", err.message ?? "L'operazione è in conflitto con lo stato attuale dei dati: ricarica la pagina e riprova.", err.code);
   if (status === 404) return new BooksApiError("notfound", err.message ?? "Elemento non trovato.");
   if (status === 503 && err.code === "db_not_configured") return new BooksApiError("unavailable", "Il database online non è ancora stato creato per questo ambiente. Il catalogo non può salvare né mostrare schede finché il proprietario non lo attiva (vedi docs/netlify-attivazione.md).");
   if (status === 503 && err.code === "db_schema_missing") return new BooksApiError("unavailable", "Il database esiste ma le sue tabelle non sono state create (migrazione non applicata). Il proprietario deve ripubblicare l'ambiente.");

@@ -82,7 +82,8 @@ export interface BooksApi {
   createBook(input: BookInput): Promise<Book>;
   /** `expectedUpdatedAt`: versione aperta dall'utente; se la scheda è cambiata nel frattempo il salvataggio è rifiutato (conflitto). */
   updateBook(id: string, input: BookInput, expectedUpdatedAt?: string): Promise<Book>;
-  deleteBook(id: string): Promise<void>;
+  /** `withHistory`: cancella anche copie, prestiti e correzioni (irreversibile); `confirmTitle` deve coincidere col titolo. */
+  deleteBook(id: string, opts?: { withHistory: true; confirmTitle: string }): Promise<void>;
   getStats(): Promise<CatalogStats>;
   /** Tutte le schede dell'utente (per l'esportazione/backup), lette a pagine. */
   listAllBooks(): Promise<Book[]>;

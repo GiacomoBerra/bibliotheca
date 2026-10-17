@@ -4,6 +4,9 @@
 
 # RILASCIO — stato al 17 ott 2026
 
+## Aggiornamento 17 ott (dopo il merge della PR #8): cancellazione definitiva con storico
+Richiesta del proprietario: poter cancellare dall'interfaccia anche le schede con prestiti (dati di prova). Prima la cancellazione era rifiutata (409) per conservare lo storico. Ora: la prima richiesta è rifiutata come prima; l'interfaccia mostra allora un secondo passaggio che spiega cosa verrà eliminato (scheda, copie, prestiti, cronologia delle correzioni) e chiede di **scrivere il titolo esatto**; il titolo è ricontrollato dal server. Solo `admin`. Migrazione **0007** (additiva): funzione SQL `purge_book()` che cancella tutto in un'unica transazione (tutto o niente); la traccia delle correzioni resta immutabile per ogni altra operazione. Test automatici: `server/purge.test.ts`, `src/test/copies.test.tsx`. **Irreversibile e senza backup automatici: scarica un backup prima.** Stato: testata in automatico; da provare su Deploy Preview.
+
 ## Matrice finale
 Legenda: **Auto** = test automatici (Claude, sandbox, Postgres reale in locale) · **Man.** = verifica manuale del proprietario su Deploy Preview (non eseguita da Claude) · **Da fare** = serve un'azione del proprietario.
 

@@ -257,6 +257,17 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         return b ? json(200, b) : fail(404, "not_found", "La scheda non esiste più: nessuna modifica è stata salvata.");
       }
       if (req.method === "DELETE") {
+        if (url.searchParams.get("withHistory") === "1") {
+          // Cancellazione definitiva con tutto lo storico: solo admin (già garantito sopra), con conferma del titolo verificata qui sul server.
+          const body = await readJson(req);
+          if (!body.ok) return body.res;
+          const confirmTitle = (body.value as { confirmTitle?: unknown } | null)?.confirmTitle;
+          const book = await repo.getBook(db, id);
+          if (!book) return fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
+          if (typeof confirmTitle !== "string" || confirmTitle.trim() !== book.title.trim()) return fail(400, "validation", "Il titolo scritto non coincide con quello della scheda: nulla è stato cancellato.");
+          const r = await repo.purgeBook(db, id);
+          return r ? json(200, { deleted: true, ...r }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
+        }
         try {
           return (await repo.deleteBook(db, id)) ? json(200, { deleted: true }) : fail(404, "not_found", "La scheda non esiste più: nulla da cancellare.");
         } catch (e) {
